@@ -1,0 +1,6 @@
+{
+  "name": "Món Khôn ?",
+  "description": "Ứng dụng gợi ý món ăn theo ngân sách, tận dụng nguyên liệu sẵn có trong tủ lạnh, lên kế hoạch đi chợ và quản lý chi phí ăn uống hằng ngày cho sinh viên và người đi làm.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
