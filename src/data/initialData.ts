@@ -398,6 +398,48 @@ export const INITIAL_PLANNED_MEALS: PlannedMeal[] = [
 
 export const INITIAL_COMMUNITY_POSTS: CommunityPost[] = [
   {
+    id: 'post-me-1',
+    authorId: 'user-me',
+    authorName: 'Bạn · Đầu Bếp Khôn Ngoan',
+    authorHandle: '@ban.monkhon',
+    authorBio: 'Yêu bếp trọ · Tối ưu thực đơn ngon bổ rẻ dưới 30k/bữa.',
+    dishName: 'Thịt kho trứng cút nước dừa chuẩn vị nhà làm',
+    image: thitKhoImg,
+    costPerServing: 25000,
+    cookTimeMinutes: 35,
+    taste: 'Đậm đà',
+    difficulty: 'Dễ nấu',
+    caption: 'Chủ nhật rảnh rỗi mình kho một nồi thịt ba chỉ trứng cút với nước dừa tươi. Chia ra được 3 hộp ăn dần cả đầu tuần, vừa thấm vị vừa tiết kiệm thời gian!',
+    smartTip: 'Chần sơ thịt ba chỉ với lát gừng trước khi ướp giúp phần mỡ trong veo và thơm hơn hẳn.',
+    ingredientsSummary: ['250g thịt ba chỉ', '10 quả trứng cút', '200ml nước dừa tươi', 'Hành, tỏi, nước mắm'],
+    stepsSummary: [
+      'Chần sơ thịt ba chỉ, thái miếng vuông rồi ướp mắm đường 15 phút.',
+      'Đảo săn thịt với nước màu, đổ nước dừa tươi vào kho lửa nhỏ 25 phút.',
+      'Cho trứng luộc bóc vỏ vào rim thêm 10 phút cho thấm vị.',
+    ],
+    likes: 48,
+    isLiked: true,
+    isSaved: true,
+    userRating: 5,
+    avgRating: 5.0,
+    ratingCount: 14,
+    comments: [
+      {
+        id: 'cc-me-1',
+        author: 'Lan Chi · Bếp Sinh Viên',
+        text: 'Màu thịt kho lên đẹp xuất sắc luôn bạn ơi! Cho mình xin tỉ lệ pha nước mắm với nhé ❤️',
+        createdAt: '2 giờ trước',
+      },
+      {
+        id: 'cc-me-2',
+        author: 'Đức Minh · Meal Prep',
+        text: 'Chia hộp trữ mát ăn 3 bữa là chuẩn bài tiết kiệm luôn, thả tim!',
+        createdAt: '45 phút trước',
+      },
+    ],
+    createdAt: '3 giờ trước',
+  },
+  {
     id: 'post-1',
     authorId: 'user-lan',
     authorName: 'Lan Chi · Bếp Sinh Viên',

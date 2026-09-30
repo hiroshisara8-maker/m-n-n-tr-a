@@ -49,7 +49,7 @@ import { ExploreView } from './components/ExploreView';
 import { PantryView } from './components/PantryView';
 import { ShoppingView } from './components/ShoppingView';
 import { MealPlanView } from './components/MealPlanView';
-import { CommunityView } from './components/CommunityView';
+import { CommunityView, UserProfileInfo } from './components/CommunityView';
 import { RandomView } from './components/RandomView';
 import { ExpensesView } from './components/ExpensesView';
 import { DishDetailModal } from './components/DishDetailModal';
@@ -90,6 +90,14 @@ export default function App() {
   const [communityPosts, setCommunityPosts] =
     useState<CommunityPost[]>(INITIAL_COMMUNITY_POSTS);
   const [followedAuthors, setFollowedAuthors] = useState<string[]>(['user-lan']);
+  const [userProfile, setUserProfile] = useState<UserProfileInfo>({
+    displayName: 'Bạn · Đầu Bếp Khôn Ngoan',
+    handle: '@ban.monkhon',
+    bio: 'Yêu bếp trọ · Chia sẻ thực đơn tự nấu ngon bổ rẻ dưới 30k/bữa.',
+    avatarUrl: '',
+    coverUrl: '',
+    followersCount: 128,
+  });
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(INITIAL_EXPENSES);
 
   // Modal State
@@ -110,6 +118,12 @@ export default function App() {
         if (Array.isArray(parsed.pantry)) setPantry(parsed.pantry);
         if (Array.isArray(parsed.plannedMeals)) setPlannedMeals(parsed.plannedMeals);
         if (Array.isArray(parsed.expenses)) setExpenses(parsed.expenses);
+        if (Array.isArray(parsed.communityPosts) && parsed.communityPosts.length > 0) {
+          setCommunityPosts(parsed.communityPosts);
+        }
+        if (parsed.userProfile && parsed.userProfile.displayName) {
+          setUserProfile(parsed.userProfile);
+        }
         if (parsed.themeConfig && parsed.themeConfig.primary) {
           setThemeConfig(parsed.themeConfig);
         }
@@ -153,13 +167,26 @@ export default function App() {
           pantry,
           plannedMeals,
           expenses,
+          communityPosts,
+          userProfile,
           themeConfig,
         })
       );
     } catch {
       // ignore storage errors
     }
-  }, [budget, daysCount, peopleCount, diningMode, pantry, plannedMeals, expenses, themeConfig]);
+  }, [
+    budget,
+    daysCount,
+    peopleCount,
+    diningMode,
+    pantry,
+    plannedMeals,
+    expenses,
+    communityPosts,
+    userProfile,
+    themeConfig,
+  ]);
 
   // Sync servings when peopleCount changes
   useEffect(() => {
@@ -451,7 +478,7 @@ export default function App() {
     );
   };
 
-  const handleAddPostComment = (postId: string, text: string) => {
+  const handleAddPostComment = (postId: string, text: string, customAuthor?: string) => {
     setCommunityPosts((prev) =>
       prev.map((p) =>
         p.id === postId
@@ -460,9 +487,55 @@ export default function App() {
               comments: [
                 ...p.comments,
                 {
-                  id: 'cc-' + Date.now(),
-                  author: 'Bạn (@ban.monkhon)',
+                  id: 'cc-' + Date.now() + '-' + Math.random().toString(36).slice(2, 5),
+                  author: customAuthor || `${userProfile.displayName} (${userProfile.handle})`,
                   text,
+                  createdAt: 'Vừa xong',
+                },
+              ],
+            }
+          : p
+      )
+    );
+  };
+
+  const handleDeletePost = (postId: string) => {
+    setCommunityPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const handleSimulateIncomingEngagement = (postId: string) => {
+    const sampleFriends = [
+      {
+        author: 'Lan Chi · Bếp Sinh Viên',
+        text: 'Nhìn đĩa đồ ăn bạn chụp hấp dẫn quá! Cho mình lưu lại công thức cuối tuần nấu thử nhé ❤️',
+      },
+      {
+        author: 'Đức Minh · Meal Prep',
+        text: 'Chi phí hợp lý mà đầy đặn thật sự, thả nhẹ 1 tim cho chủ thớt!',
+      },
+      {
+        author: 'Thanh Huyền · Sống Một Mình',
+        text: 'Món này ăn với cơm nóng là hết nước chấm luôn bạn ơi!',
+      },
+      {
+        author: 'Quốc Bảo · Bách Khoa',
+        text: 'Đỉnh quá, sinh viên tụi mình rất cần những mâm cơm tiết kiệm như thế này.',
+      },
+    ];
+    const picked = sampleFriends[Math.floor(Math.random() * sampleFriends.length)];
+
+    setCommunityPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              likes: p.likes + Math.floor(Math.random() * 4) + 2,
+              comments: [
+                ...p.comments,
+                {
+                  id: 'cc-sim-' + Date.now(),
+                  author: picked.author,
+                  text: picked.text,
                   createdAt: 'Vừa xong',
                 },
               ],
@@ -490,12 +563,13 @@ export default function App() {
     ingredientsSummary: string[];
     stepsSummary: string[];
   }) => {
+    const newId = 'post-' + Date.now();
     const created: CommunityPost = {
-      id: 'post-' + Date.now(),
+      id: newId,
       authorId: 'user-me',
-      authorName: 'Bạn · Đầu Bếp Khôn Ngoan',
-      authorHandle: '@ban.monkhon',
-      authorBio: 'Thành viên Món Khôn · Ăn ngon tiết kiệm mỗi ngày.',
+      authorName: userProfile.displayName,
+      authorHandle: userProfile.handle,
+      authorBio: userProfile.bio,
       ...newPostData,
       likes: 1,
       isLiked: true,
@@ -507,6 +581,11 @@ export default function App() {
       createdAt: 'Vừa xong',
     };
     setCommunityPosts((prev) => [created, ...prev]);
+
+    // Simulate a friendly community reaction shortly after posting
+    setTimeout(() => {
+      handleSimulateIncomingEngagement(newId);
+    }, 1800);
   };
 
   const navItems: Array<{
@@ -836,10 +915,14 @@ export default function App() {
             <CommunityView
               posts={communityPosts}
               followedAuthors={followedAuthors}
+              userProfile={userProfile}
+              onUpdateUserProfile={setUserProfile}
               onToggleLike={handleToggleLikePost}
               onToggleSave={handleToggleSavePost}
               onRatePost={handleRatePost}
               onAddPostComment={handleAddPostComment}
+              onDeletePost={handleDeletePost}
+              onSimulateIncomingEngagement={handleSimulateIncomingEngagement}
               onToggleFollow={handleToggleFollow}
               onCreatePost={handleCreatePost}
               totalSavedOverall={totalSavedFromPantry + 55000}
