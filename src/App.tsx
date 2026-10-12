@@ -17,6 +17,7 @@ import {
   X,
   Plus,
   Palette,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   CustomShoppingItem,
@@ -30,6 +31,7 @@ import {
   DishTaste,
   DishDifficulty,
   UserThemeConfig,
+  DietaryPreferences,
 } from './types';
 import {
   INITIAL_COMMUNITY_POSTS,
@@ -37,12 +39,16 @@ import {
   INITIAL_EXPENSES,
   INITIAL_PANTRY,
   INITIAL_PLANNED_MEALS,
+  INITIAL_DIETARY_PREFERENCES,
 } from './data/initialData';
 import {
   evaluateDishWithPantry,
   formatVND,
   normalizeName,
   REFERENCE_TODAY,
+  computeShoppingListFromMealPlan,
+  getDaysUntilExpiry,
+  generateSmartMealPlan,
 } from './utils/mealMath';
 import { HomeView } from './components/HomeView';
 import { ExploreView } from './components/ExploreView';
@@ -52,6 +58,7 @@ import { MealPlanView } from './components/MealPlanView';
 import { CommunityView, UserProfileInfo } from './components/CommunityView';
 import { RandomView } from './components/RandomView';
 import { ExpensesView } from './components/ExpensesView';
+import { DietaryPreferencesView } from './components/DietaryPreferencesView';
 import { DishDetailModal } from './components/DishDetailModal';
 import { BrandLogo } from './components/BrandLogo';
 import {
@@ -59,6 +66,9 @@ import {
   DEFAULT_THEME_CONFIG,
   THEME_PRESETS,
 } from './components/ThemeCustomizerModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { MobileBottomNav } from './components/MobileBottomNav';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 const STORAGE_KEY = 'mon_khon_app_state_v1';
 
@@ -99,6 +109,8 @@ export default function App() {
     followersCount: 128,
   });
   const [expenses, setExpenses] = useState<ExpenseRecord[]>(INITIAL_EXPENSES);
+  const [dietaryPreferences, setDietaryPreferences] =
+    useState<DietaryPreferences>(INITIAL_DIETARY_PREFERENCES);
 
   // Modal State
   const [selectedDishForModal, setSelectedDishForModal] = useState<Dish | null>(null);
@@ -118,6 +130,7 @@ export default function App() {
         if (Array.isArray(parsed.pantry)) setPantry(parsed.pantry);
         if (Array.isArray(parsed.plannedMeals)) setPlannedMeals(parsed.plannedMeals);
         if (Array.isArray(parsed.expenses)) setExpenses(parsed.expenses);
+        if (parsed.dietaryPreferences) setDietaryPreferences(parsed.dietaryPreferences);
         if (Array.isArray(parsed.communityPosts) && parsed.communityPosts.length > 0) {
           setCommunityPosts(parsed.communityPosts);
         }
@@ -170,6 +183,7 @@ export default function App() {
           communityPosts,
           userProfile,
           themeConfig,
+          dietaryPreferences,
         })
       );
     } catch {
@@ -186,6 +200,7 @@ export default function App() {
     communityPosts,
     userProfile,
     themeConfig,
+    dietaryPreferences,
   ]);
 
   // Sync servings when peopleCount changes
@@ -217,6 +232,16 @@ export default function App() {
       remainingBudget: budget - cost,
     };
   }, [plannedMeals, dishes, pantry, budget]);
+
+  // Mobile badges: count of expiring ingredients and missing shopping items
+  const expiringCount = useMemo(
+    () => pantry.filter((i) => getDaysUntilExpiry(i.expiryDate) <= 2).length,
+    [pantry]
+  );
+  const shoppingMissingCount = useMemo(
+    () => computeShoppingListFromMealPlan(plannedMeals, dishes, pantry).length,
+    [plannedMeals, dishes, pantry]
+  );
 
   // Handlers
   const handleAddMealToSlot = (
@@ -306,46 +331,58 @@ export default function App() {
     setExpenses((prev) => [newExp, ...prev]);
   };
 
-  // Auto-generate optimal meal plan fitting budget and rescuing pantry items
-  const handleAutoGeneratePlan = () => {
-    const slots: MealSlotType[] = ['Sáng', 'Trưa', 'Tối'];
-    const sortedByEfficiency = [...dishes].sort((a, b) => {
-      const evA = evaluateDishWithPantry(a, pantry, peopleCount, diningMode);
-      const evB = evaluateDishWithPantry(b, pantry, peopleCount, diningMode);
-      return evA.netOutOfPocketCost - evB.netOutOfPocketCost;
+  // Auto-generate optimal meal plan fitting budget, eliminating allergens/dislikes, and rescuing pantry items
+  const handleAutoGeneratePlan = (options?: {
+    avoidDuplicates?: boolean;
+    strategy?: 'balanced' | 'budget_saver' | 'pantry_first';
+    slots?: MealSlotType[];
+    seed?: number;
+    filterDietary?: boolean;
+  }) => {
+    const generated = generateSmartMealPlan(dishes, pantry, {
+      daysCount,
+      peopleCount,
+      budget,
+      diningMode,
+      avoidDuplicates: options?.avoidDuplicates ?? true,
+      strategy: options?.strategy ?? 'balanced',
+      slots: options?.slots ?? ['Sáng', 'Trưa', 'Tối'],
+      seed: options?.seed ?? Math.random(),
+      dietaryPreferences,
+      filterDietary: options?.filterDietary ?? true,
     });
 
-    const generated: PlannedMeal[] = [];
-    let runningCost = 0;
-    let cursor = 0;
-
-    for (let d = 1; d <= daysCount; d++) {
-      for (const s of slots) {
-        const candidate =
-          s === 'Sáng'
-            ? dishes.find((x) => x.category === 'Ăn sáng') ||
-              sortedByEfficiency[cursor % sortedByEfficiency.length]
-            : sortedByEfficiency[cursor % sortedByEfficiency.length];
-
-        cursor++;
-        if (!candidate) continue;
-        const ev = evaluateDishWithPantry(candidate, pantry, peopleCount, diningMode);
-        if (runningCost + ev.netOutOfPocketCost <= budget || generated.length < 3) {
-          generated.push({
-            id: `pm-auto-${d}-${s}-${Date.now()}-${cursor}`,
-            dayIndex: d,
-            slot: s,
-            dishId: candidate.id,
-            mode: diningMode,
-            servings: peopleCount,
-            isCooked: false,
-          });
-          runningCost += ev.netOutOfPocketCost;
-        }
-      }
-    }
-
     setPlannedMeals(generated);
+  };
+
+  const handleToggleExcludeDish = (dishId: string) => {
+    setDietaryPreferences((prev) => {
+      const cur = prev.excludedDishIds || [];
+      const exists = cur.includes(dishId);
+      return {
+        ...prev,
+        excludedDishIds: exists ? cur.filter((id) => id !== dishId) : [...cur, dishId],
+      };
+    });
+  };
+
+  const handleUpdatePlannedMeal = (
+    mealId: string,
+    updates: {
+      dishId: string;
+      servings: number;
+      mode: 'cook' | 'eat_out';
+      slot?: MealSlotType;
+      dayIndex?: number;
+    }
+  ) => {
+    setPlannedMeals((prev) =>
+      prev.map((m) => (m.id === mealId ? { ...m, ...updates } : m))
+    );
+  };
+
+  const handleClearPlannedMeals = () => {
+    setPlannedMeals([]);
   };
 
   // Pantry handlers
@@ -588,10 +625,17 @@ export default function App() {
     }, 1800);
   };
 
+  const totalDietaryRules =
+    dietaryPreferences.allergies.length +
+    dietaryPreferences.customAllergies.length +
+    dietaryPreferences.dislikes.length +
+    dietaryPreferences.customDislikes.length +
+    (dietaryPreferences.excludedDishIds?.length || 0);
+
   const navItems: Array<{
     id: NavTab;
     label: string;
-    icon: React.ComponentType<{ className?: string }>;
+    icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
     meta?: string;
   }> = [
     { id: 'home', label: 'Trang chủ', icon: Home },
@@ -599,6 +643,12 @@ export default function App() {
     { id: 'pantry', label: 'Kho đồ ăn', icon: Refrigerator, meta: `${pantry.length}` },
     { id: 'shopping', label: 'Đi chợ', icon: ShoppingCart },
     { id: 'mealplan', label: 'Kế hoạch ăn', icon: CalendarDays, meta: `${plannedMeals.length} bữa` },
+    {
+      id: 'dietary',
+      label: 'Dị ứng & Món ghét',
+      icon: ShieldAlert,
+      meta: totalDietaryRules > 0 ? `${totalDietaryRules}` : undefined,
+    },
     { id: 'community', label: 'Cộng đồng & Hồ sơ', icon: Users },
     { id: 'random', label: 'Random món', icon: Shuffle },
     { id: 'expenses', label: 'Chi phí ăn uống', icon: Wallet },
@@ -612,18 +662,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex bg-[#F6F9F5] text-[#1B2A22]">
+    <div
+      className="min-h-screen flex"
+      style={{ backgroundColor: themeConfig.bg, color: themeConfig.text }}
+    >
       {/* Mobile Sidebar Backdrop */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-[#1B2A22]/40 backdrop-blur-xs md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs md:hidden"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
 
       {/* Vertical Left Sidebar (264px width) */}
       <aside
-        className={`fixed md:sticky top-0 left-0 z-50 h-screen w-64 shrink-0 bg-[#FFFFFF] border-r border-[#DCE5D8] flex flex-col justify-between transition-transform duration-200 ${
+        className={`fixed md:sticky top-0 left-0 z-50 h-screen w-64 shrink-0 bg-white border-r border-[#DCE5D8] flex flex-col justify-between transition-transform duration-200 ${
           mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
@@ -650,24 +703,28 @@ export default function App() {
                   key={item.id}
                   type="button"
                   onClick={() => handleSelectNav(item.id)}
+                  style={
+                    isActive
+                      ? { backgroundColor: themeConfig.primary, color: '#ffffff' }
+                      : undefined
+                  }
                   className={`w-full px-3.5 py-2.5 rounded-xl text-sm font-medium flex items-center justify-between gap-2 transition-colors cursor-pointer whitespace-nowrap ${
                     isActive
-                      ? 'bg-[#2D6A4F] text-white font-semibold'
+                      ? 'font-semibold shadow-xs'
                       : 'text-[#385747] hover:bg-[#EEF5EE] hover:text-[#1B2A22]'
                   }`}
                 >
                   <span className="flex items-center gap-3 min-w-0">
                     <Icon
-                      className={`w-4 h-4 shrink-0 ${
-                        isActive ? 'text-white' : 'text-[#2D6A4F]'
-                      }`}
+                      className="w-4 h-4 shrink-0"
+                      style={!isActive ? { color: themeConfig.primary } : { color: '#ffffff' }}
                     />
                     <span className="truncate">{item.label}</span>
                   </span>
                   {item.meta && (
                     <span
                       className={`font-mono tabular-nums text-xs ${
-                        isActive ? 'text-[#D8F3DC]' : 'text-[#5C7467]'
+                        isActive ? 'text-white/85' : 'text-[#5C7467]'
                       }`}
                     >
                       {item.meta}
@@ -687,7 +744,8 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setThemeModalOpen(true)}
-                className="text-xs font-medium text-[#2D6A4F] hover:underline cursor-pointer"
+                style={{ color: themeConfig.primary }}
+                className="text-xs font-medium hover:underline cursor-pointer"
               >
                 Tùy chỉnh sâu →
               </button>
@@ -714,13 +772,20 @@ export default function App() {
                   title={preset.name}
                   className={`w-6 h-6 rounded-full border transition-transform cursor-pointer ${
                     themeConfig.presetId === preset.id
-                      ? 'scale-115 ring-2 ring-[#2D6A4F] border-white'
+                      ? 'scale-115 ring-2 ring-offset-1 border-white shadow-2xs'
                       : 'border-black/15 hover:scale-105'
                   }`}
-                  style={{ backgroundColor: preset.primary }}
+                  style={{
+                    backgroundColor: preset.primary,
+                    borderColor: '#ffffff',
+                  }}
                 />
               ))}
             </div>
+          </div>
+          {/* PWA Mobile Install inside Sidebar */}
+          <div className="pt-2">
+            <PWAInstallButton variant="sidebar" />
           </div>
         </div>
 
@@ -779,7 +844,9 @@ export default function App() {
               <div className="md:hidden">
                 <BrandLogo size="sm" showText={false} onClick={() => setActiveTab('home')} />
               </div>
-              <span className="font-medium text-[#D85A7F]">Món Khôn</span>
+              <span className="font-medium" style={{ color: themeConfig.primary }}>
+                Món Khôn
+              </span>
               <span aria-hidden="true">/</span>
               <span className="font-semibold text-[#1B2A22] truncate">
                 {activeNavItem.label}
@@ -787,35 +854,40 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+            {/* PWA Install Button on mobile & desktop */}
+            <PWAInstallButton variant="compact" />
+
             <button
               type="button"
               onClick={() => setThemeModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#385747] hover:text-[#1B2A22] bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl transition-colors whitespace-nowrap cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-[#385747] hover:text-[#1B2A22] bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl transition-colors whitespace-nowrap cursor-pointer"
+              title="Tùy chỉnh chủ đề màu sắc & kiểu chữ"
             >
-              <Palette className="w-3.5 h-3.5 text-[#2D6A4F]" />
-              <span>Tùy chỉnh chủ đề</span>
+              <Palette className="w-3.5 h-3.5" style={{ color: themeConfig.primary }} />
+              <span className="hidden sm:inline">Chủ đề</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('pantry')}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#385747] hover:text-[#1B2A22] bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl transition-colors whitespace-nowrap cursor-pointer"
+              className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#385747] hover:text-[#1B2A22] bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl transition-colors whitespace-nowrap cursor-pointer"
             >
-              <Plus className="w-3.5 h-3.5 text-[#2D6A4F]" />
-              Nhập Kho đồ ăn ({pantry.length})
+              <Plus className="w-3.5 h-3.5" style={{ color: themeConfig.primary }} />
+              Nhập Kho ({pantry.length})
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('expenses')}
-              className="px-3.5 py-1.5 text-xs font-mono tabular-nums font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl transition-colors whitespace-nowrap cursor-pointer"
+              style={{ backgroundColor: themeConfig.primary }}
+              className="px-2.5 sm:px-3.5 py-1.5 text-xs font-mono tabular-nums font-semibold text-white rounded-xl transition-colors whitespace-nowrap cursor-pointer hover:opacity-90 shadow-2xs"
             >
-              Ví còn: {formatVND(remainingBudget)}
+              Ví: {formatVND(remainingBudget)}
             </button>
           </div>
         </header>
 
-        {/* Main Content Viewport */}
-        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-8 py-8">
+        {/* Main Content Viewport with mobile bottom bar padding */}
+        <main className="flex-1 max-w-[1200px] w-full mx-auto px-4 sm:px-8 pt-4 pb-28 md:py-8">
           {activeTab === 'home' && (
             <HomeView
               budget={budget}
@@ -832,11 +904,13 @@ export default function App() {
               totalPlannedCost={totalPlannedCost}
               totalSavedFromPantry={totalSavedFromPantry}
               remainingBudget={remainingBudget}
+              dietaryPreferences={dietaryPreferences}
               onSelectDishDetail={(dish) => setSelectedDishForModal(dish)}
               onQuickAddMeal={handleQuickAddMeal}
               onRemovePlannedMeal={handleRemovePlannedMeal}
               onNavigateTab={setActiveTab}
               onAutoGeneratePlan={handleAutoGeneratePlan}
+              onUpdatePlannedMeal={handleUpdatePlannedMeal}
             />
           )}
 
@@ -847,6 +921,7 @@ export default function App() {
               peopleCount={peopleCount}
               diningMode={diningMode}
               plannedMeals={plannedMeals}
+              dietaryPreferences={dietaryPreferences}
               onSelectDishDetail={(dish) => setSelectedDishForModal(dish)}
               onQuickAddMeal={handleQuickAddMeal}
             />
@@ -878,6 +953,11 @@ export default function App() {
                   { ...item, id: 'cs-' + Date.now(), checked: false },
                 ])
               }
+              onUpdateCustomShoppingItem={(id, updated) =>
+                setCustomShoppingItems((prev) =>
+                  prev.map((c) => (c.id === id ? { ...c, ...updated } : c))
+                )
+              }
               onToggleCustomShoppingItem={(id) =>
                 setCustomShoppingItems((prev) =>
                   prev.map((c) => (c.id === id ? { ...c, checked: !c.checked } : c))
@@ -894,6 +974,7 @@ export default function App() {
           {activeTab === 'mealplan' && (
             <MealPlanView
               budget={budget}
+              onUpdateBudget={(newBudget) => setBudget(newBudget)}
               daysCount={daysCount}
               peopleCount={peopleCount}
               dishes={dishes}
@@ -902,12 +983,27 @@ export default function App() {
               totalPlannedCost={totalPlannedCost}
               totalSavedFromPantry={totalSavedFromPantry}
               remainingBudget={remainingBudget}
+              dietaryPreferences={dietaryPreferences}
               onAddMealToSlot={handleAddMealToSlot}
               onRemovePlannedMeal={handleRemovePlannedMeal}
               onMarkMealCooked={handleMarkMealCooked}
               onAutoGeneratePlan={handleAutoGeneratePlan}
               onSelectDishDetail={(dish) => setSelectedDishForModal(dish)}
               onNavigateTab={setActiveTab}
+              onUpdatePlannedMeal={handleUpdatePlannedMeal}
+              onClearPlan={handleClearPlannedMeals}
+            />
+          )}
+
+          {activeTab === 'dietary' && (
+            <DietaryPreferencesView
+              preferences={dietaryPreferences}
+              onUpdatePreferences={setDietaryPreferences}
+              dishes={dishes}
+              plannedMeals={plannedMeals}
+              pantry={pantry}
+              onNavigateTab={setActiveTab}
+              onAutoGeneratePlan={handleAutoGeneratePlan}
             />
           )}
 
@@ -934,8 +1030,10 @@ export default function App() {
               dishes={dishes}
               communityPosts={communityPosts}
               pantry={pantry}
+              plannedMeals={plannedMeals}
               peopleCount={peopleCount}
               remainingBudget={remainingBudget}
+              dietaryPreferences={dietaryPreferences}
               onQuickAddMeal={handleQuickAddMeal}
               onSelectDishDetail={(dish) => setSelectedDishForModal(dish)}
             />
@@ -949,6 +1047,11 @@ export default function App() {
               expenses={expenses}
               onAddExpense={(rec) =>
                 setExpenses((prev) => [{ ...rec, id: 'exp-' + Date.now() }, ...prev])
+              }
+              onUpdateExpense={(id, updated) =>
+                setExpenses((prev) =>
+                  prev.map((e) => (e.id === id ? { ...e, ...updated } : e))
+                )
               }
               onDeleteExpense={(id) => setExpenses((prev) => prev.filter((e) => e.id !== id))}
             />
@@ -983,6 +1086,13 @@ export default function App() {
               >
                 Đi chợ
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dietary')}
+                className="hover:text-[#1B2A22] cursor-pointer"
+              >
+                Dị ứng & Món ghét
+              </button>
             </div>
           </div>
         </footer>
@@ -995,6 +1105,8 @@ export default function App() {
         servings={peopleCount}
         daysCount={daysCount}
         defaultMode={diningMode}
+        dietaryPreferences={dietaryPreferences}
+        onToggleExcludeDish={handleToggleExcludeDish}
         onClose={() => setSelectedDishForModal(null)}
         onAddToMealPlan={handleAddMealToSlot}
         onAddComment={handleAddDishComment}
@@ -1007,6 +1119,20 @@ export default function App() {
         onChangeTheme={setThemeConfig}
         onClose={() => setThemeModalOpen(false)}
       />
+
+      {/* Mobile Bottom Navigation Bar (Thumb navigation for phones) */}
+      <MobileBottomNav
+        activeTab={activeTab}
+        onSelectTab={handleSelectNav}
+        onOpenMobileDrawer={() => setMobileMenuOpen(true)}
+        pantryCount={pantry.length}
+        expiringCount={expiringCount}
+        shoppingMissingCount={shoppingMissingCount}
+        primaryColor={themeConfig.primary}
+      />
+
+      {/* Offline Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 }

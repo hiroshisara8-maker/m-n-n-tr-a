@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="pinkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F48FB1" />
+      <stop offset="100%" stop-color="#EC407A" />
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="28" fill="#FFF8FA"/>
+  <rect x="56" y="18" width="38" height="36" rx="7" transform="rotate(8 56 18)" fill="url(#pinkGrad)" opacity="0.85"/>
+  <path d="M24 54 C24 82, 84 82, 84 54 Z" fill="#FCE4EC" stroke="#EC407A" stroke-width="3"/>
+  <ellipse cx="45" cy="64" rx="2.5" ry="4" fill="#D81B60"/>
+  <path d="M52 67 Q55 70 58 67" stroke="#D81B60" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M66 61 L62 64 L66 67" stroke="#D81B60" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="80" cy="74" r="14" fill="url(#pinkGrad)" stroke="#FFF" stroke-width="2"/>
+  <text x="80" y="79" text-anchor="middle" fill="#FFF" font-size="14" font-weight="bold" font-family="sans-serif">$</text>
+</svg>

@@ -125,6 +125,14 @@ export interface ExpenseRecord {
   note: string;
 }
 
+export interface DietaryPreferences {
+  allergies: string[];
+  dislikes: string[];
+  customAllergies: string[];
+  customDislikes: string[];
+  excludedDishIds: string[];
+}
+
 export type NavTab =
   | 'home'
   | 'explore'
@@ -133,7 +141,8 @@ export type NavTab =
   | 'mealplan'
   | 'community'
   | 'random'
-  | 'expenses';
+  | 'expenses'
+  | 'dietary';
 
 export interface ThemePreset {
   id: string;

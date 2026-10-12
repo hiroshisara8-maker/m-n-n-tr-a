@@ -7,6 +7,8 @@ import {
   Check,
   ArrowRight,
   Trash2,
+  Edit2,
+  X,
 } from 'lucide-react';
 import {
   CustomShoppingItem,
@@ -20,6 +22,7 @@ import {
   formatVND,
   GeneratedShoppingItem,
 } from '../utils/mealMath';
+import { CurrencyInput } from './CurrencyInput';
 
 interface ShoppingViewProps {
   plannedMeals: PlannedMeal[];
@@ -27,6 +30,7 @@ interface ShoppingViewProps {
   pantry: PantryItem[];
   customShoppingItems: CustomShoppingItem[];
   onAddCustomShoppingItem: (item: Omit<CustomShoppingItem, 'id' | 'checked'>) => void;
+  onUpdateCustomShoppingItem?: (id: string, updated: Partial<CustomShoppingItem>) => void;
   onToggleCustomShoppingItem: (id: string) => void;
   onDeleteCustomShoppingItem: (id: string) => void;
   onPurchaseToPantry: (
@@ -47,6 +51,7 @@ export const ShoppingView: React.FC<ShoppingViewProps> = ({
   pantry,
   customShoppingItems,
   onAddCustomShoppingItem,
+  onUpdateCustomShoppingItem,
   onToggleCustomShoppingItem,
   onDeleteCustomShoppingItem,
   onPurchaseToPantry,
@@ -54,6 +59,10 @@ export const ShoppingView: React.FC<ShoppingViewProps> = ({
 }) => {
   const [checkedGeneratedKeys, setCheckedGeneratedKeys] = useState<Record<string, boolean>>({});
   const [restockSuccessMsg, setRestockSuccessMsg] = useState<string | null>(null);
+
+  // Inline editing custom items
+  const [editingCustomId, setEditingCustomId] = useState<string | null>(null);
+  const [editPriceVal, setEditPriceVal] = useState<number>(0);
 
   // Form for extra custom shopping items
   const [customName, setCustomName] = useState('');
@@ -339,31 +348,35 @@ export const ShoppingView: React.FC<ShoppingViewProps> = ({
               placeholder="Tên đồ cần mua (VD: Nước mắm, Dầu ăn...)"
               className="w-full px-3 py-2 text-sm bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl text-[#1B2A22]"
             />
-            <div className="grid grid-cols-3 gap-2">
-              <input
-                type="number"
-                min={1}
-                value={customAmount}
-                onChange={(e) => setCustomAmount(Math.max(1, Number(e.target.value)))}
-                placeholder="SL"
-                className="px-3 py-2 text-xs font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
-              />
-              <input
-                type="text"
-                value={customUnit}
-                onChange={(e) => setCustomUnit(e.target.value)}
-                placeholder="Đơn vị"
-                className="px-3 py-2 text-xs bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
-              />
-              <input
-                type="number"
-                min={0}
-                step={1000}
-                value={customPrice}
-                onChange={(e) => setCustomPrice(Math.max(0, Number(e.target.value)))}
-                placeholder="Giá (đ)"
-                className="px-3 py-2 text-xs font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
-              />
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(Math.max(1, Number(e.target.value)))}
+                  placeholder="SL"
+                  className="px-3 py-2 text-xs font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
+                />
+                <input
+                  type="text"
+                  value={customUnit}
+                  onChange={(e) => setCustomUnit(e.target.value)}
+                  placeholder="Đơn vị"
+                  className="px-3 py-2 text-xs bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-[#385747] mb-0.5">
+                  Giá tiền ước tính (đ)
+                </label>
+                <CurrencyInput
+                  value={customPrice}
+                  onChange={(val) => setCustomPrice(val)}
+                  quickDeltas={[2000, 5000, 10000, 20000]}
+                  placeholder="Giá dự tính..."
+                />
+              </div>
             </div>
             <button
               type="submit"
@@ -380,39 +393,100 @@ export const ShoppingView: React.FC<ShoppingViewProps> = ({
                 Danh sách mua thêm ({customShoppingItems.length}):
               </div>
               <div className="divide-y divide-[#E6EFE2] border border-[#DCE5D8] rounded-xl overflow-hidden">
-                {customShoppingItems.map((ci) => (
-                  <div
-                    key={ci.id}
-                    className="p-2.5 bg-[#F8FBF7] flex items-center justify-between gap-2 text-xs"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onToggleCustomShoppingItem(ci.id)}
-                      className="flex items-center gap-2 text-left cursor-pointer"
+                {customShoppingItems.map((ci) => {
+                  const isEditingPrice = editingCustomId === ci.id;
+
+                  if (isEditingPrice) {
+                    return (
+                      <div
+                        key={ci.id}
+                        className="p-2.5 bg-[#EEF5EE] flex flex-col gap-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-[#1B2A22]">
+                            Chỉnh giá: {ci.name} ({ci.amount} {ci.unit})
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setEditingCustomId(null)}
+                            className="text-[#5C7467] hover:text-[#1B2A22]"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <CurrencyInput
+                          value={editPriceVal}
+                          onChange={(v) => setEditPriceVal(v)}
+                          quickDeltas={[2000, 5000, 10000]}
+                        />
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (onUpdateCustomShoppingItem) {
+                                onUpdateCustomShoppingItem(ci.id, {
+                                  estimatedPrice: editPriceVal,
+                                });
+                              }
+                              setEditingCustomId(null);
+                            }}
+                            className="px-3 py-1 bg-[#2D6A4F] text-white rounded-lg font-medium text-xs flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3 h-3" /> Lưu giá
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={ci.id}
+                      className="p-2.5 bg-[#F8FBF7] flex items-center justify-between gap-2 text-xs"
                     >
-                      {ci.checked ? (
-                        <CheckSquare className="w-4 h-4 text-[#2D6A4F] shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-[#8FA698] shrink-0" />
-                      )}
-                      <span className={ci.checked ? 'line-through text-[#6B7F73]' : 'text-[#1B2A22]'}>
-                        {ci.name} ({ci.amount} {ci.unit})
-                      </span>
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono tabular-nums font-semibold">
-                        {formatVND(ci.estimatedPrice)}
-                      </span>
                       <button
                         type="button"
-                        onClick={() => onDeleteCustomShoppingItem(ci.id)}
-                        className="text-[#6B7F73] hover:text-[#DC2626] cursor-pointer"
+                        onClick={() => onToggleCustomShoppingItem(ci.id)}
+                        className="flex items-center gap-2 text-left cursor-pointer min-w-0 flex-1"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {ci.checked ? (
+                          <CheckSquare className="w-4 h-4 text-[#2D6A4F] shrink-0" />
+                        ) : (
+                          <Square className="w-4 h-4 text-[#8FA698] shrink-0" />
+                        )}
+                        <span
+                          className={`truncate ${
+                            ci.checked ? 'line-through text-[#6B7F73]' : 'text-[#1B2A22]'
+                          }`}
+                        >
+                          {ci.name} ({ci.amount} {ci.unit})
+                        </span>
                       </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingCustomId(ci.id);
+                            setEditPriceVal(ci.estimatedPrice);
+                          }}
+                          className="font-mono tabular-nums font-semibold text-[#1B2A22] hover:text-[#2D6A4F] hover:bg-[#E8EFE5] px-1.5 py-0.5 rounded cursor-pointer flex items-center gap-1"
+                          title="Bấm để chỉnh sửa lại giá tiền"
+                        >
+                          {formatVND(ci.estimatedPrice)}
+                          <Edit2 className="w-3 h-3 text-[#5C7467]" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteCustomShoppingItem(ci.id)}
+                          className="text-[#6B7F73] hover:text-[#DC2626] p-1 cursor-pointer"
+                          title="Xóa món"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

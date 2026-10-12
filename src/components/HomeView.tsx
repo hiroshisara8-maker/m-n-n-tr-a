@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Utensils,
   ShoppingBag,
@@ -7,10 +7,16 @@ import {
   Plus,
   Sparkles,
   Trash2,
+  Repeat,
+  Shuffle,
+  ShieldAlert,
+  Ban,
 } from 'lucide-react';
-import { Dish, MealSlotType, NavTab, PantryItem, PlannedMeal } from '../types';
-import { evaluateDishWithPantry, formatVND, getDaysUntilExpiry } from '../utils/mealMath';
+import { Dish, MealSlotType, NavTab, PantryItem, PlannedMeal, DietaryPreferences } from '../types';
+import { evaluateDishWithPantry, formatVND, getDaysUntilExpiry, isDishRestricted } from '../utils/mealMath';
 import { DishImage } from './DishImage';
+import { CurrencyInput } from './CurrencyInput';
+import { MealSwapModal } from './MealSwapModal';
 
 interface HomeViewProps {
   budget: number;
@@ -27,11 +33,22 @@ interface HomeViewProps {
   totalPlannedCost: number;
   totalSavedFromPantry: number;
   remainingBudget: number;
+  dietaryPreferences?: DietaryPreferences;
   onSelectDishDetail: (dish: Dish) => void;
   onQuickAddMeal: (dishId: string, mode: 'cook' | 'eat_out') => void;
   onRemovePlannedMeal: (mealId: string) => void;
   onNavigateTab: (tab: NavTab) => void;
-  onAutoGeneratePlan: () => void;
+  onAutoGeneratePlan: (options?: any) => void;
+  onUpdatePlannedMeal?: (
+    mealId: string,
+    updates: {
+      dishId: string;
+      servings: number;
+      mode: 'cook' | 'eat_out';
+      slot?: MealSlotType;
+      dayIndex?: number;
+    }
+  ) => void;
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
@@ -49,12 +66,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
   totalPlannedCost,
   totalSavedFromPantry,
   remainingBudget,
+  dietaryPreferences,
   onSelectDishDetail,
   onQuickAddMeal,
   onRemovePlannedMeal,
   onNavigateTab,
   onAutoGeneratePlan,
+  onUpdatePlannedMeal,
 }) => {
+  const [swappingMeal, setSwappingMeal] = useState<PlannedMeal | null>(null);
   const expiringItems = pantry.filter((item) => getDaysUntilExpiry(item.expiryDate) <= 2);
   const targetPerMealBudget = Math.max(
     10000,
@@ -114,32 +134,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <label className="block text-xs font-medium text-[#385747]">
                 1. Số tiền ăn đang có (VNĐ)
               </label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min={0}
-                  step={10000}
-                  value={budget}
-                  onChange={(e) => setBudget(Math.max(0, Number(e.target.value)))}
-                  className="w-full px-3.5 py-2.5 bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl font-mono tabular-nums text-base font-semibold text-[#1B2A22] focus:outline-none focus:border-[#2D6A4F]"
-                />
-              </div>
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {[150000, 300000, 500000, 1000000].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setBudget(preset)}
-                    className={`px-2.5 py-1 text-xs font-mono tabular-nums rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
-                      budget === preset
-                        ? 'bg-[#2D6A4F] text-white border-[#2D6A4F]'
-                        : 'bg-[#F6F9F5] text-[#4A6355] border-[#DCE5D8] hover:border-[#2D6A4F]'
-                    }`}
-                  >
-                    {formatVND(preset)}
-                  </button>
-                ))}
-              </div>
+              <CurrencyInput
+                value={budget}
+                onChange={(val) => setBudget(val)}
+                presets={[150000, 300000, 500000, 1000000]}
+                quickDeltas={[20000, 50000, 100000]}
+                placeholder="Nhập số tiền ngân sách..."
+              />
             </div>
 
             {/* Hình thức ăn */}
@@ -249,6 +250,44 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
 
+          {/* Dietary Safety Status Card */}
+          <div className="p-3.5 bg-[#FEF2F2]/60 border border-[#FECACA] rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="p-1.5 bg-[#FEE2E2] text-[#DC2626] rounded-lg shrink-0">
+                <ShieldAlert className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <span className="text-xs font-semibold text-[#1B2A22] block truncate">
+                  Khẩu vị: Dị ứng & Món ghét
+                </span>
+                <span className="text-[11px] text-[#7F1D1D] truncate block">
+                  {dietaryPreferences &&
+                  (dietaryPreferences.allergies.length +
+                    dietaryPreferences.customAllergies.length +
+                    dietaryPreferences.dislikes.length +
+                    dietaryPreferences.customDislikes.length +
+                    dietaryPreferences.excludedDishIds.length) > 0
+                    ? `Đang né ${
+                        dietaryPreferences.allergies.length +
+                        dietaryPreferences.customAllergies.length
+                      } chất dị ứng và ${
+                        dietaryPreferences.dislikes.length +
+                        dietaryPreferences.customDislikes.length +
+                        dietaryPreferences.excludedDishIds.length
+                      } món ghét`
+                    : 'Chưa cài đặt chất dị ứng/món ghét nào (bấm để thêm)'}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigateTab('dietary')}
+              className="px-2.5 py-1.5 text-xs font-semibold text-[#DC2626] bg-white border border-[#FECACA] hover:bg-[#FEF2F2] rounded-lg transition-colors cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              Cài đặt khẩu vị <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+
           {/* Quick Action Footer */}
           <div className="pt-4 border-t border-[#E6EFE2] flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-[#4A6355]">
@@ -261,16 +300,25 @@ export const HomeView: React.FC<HomeViewProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                onClick={onAutoGeneratePlan}
-                className="px-4 py-2 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                onClick={() => onAutoGeneratePlan({ avoidDuplicates: true })}
+                className="px-4 py-2 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-xs"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Gợi ý thực đơn tự động ({daysCount} ngày)
+                Gợi ý thực đơn ({daysCount} ngày)
+              </button>
+              <button
+                type="button"
+                onClick={() => onAutoGeneratePlan({ avoidDuplicates: true, seed: Math.random() })}
+                className="px-3 py-2 text-xs font-semibold text-[#2D6A4F] bg-[#EAF4EC] hover:bg-[#D8F3DC] rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                title="Đổi thực đơn sang bộ món khác hoàn toàn không trùng"
+              >
+                <Shuffle className="w-3.5 h-3.5" />
+                Đổi gợi ý khác
               </button>
               <button
                 type="button"
                 onClick={() => onNavigateTab('random')}
-                className="px-3.5 py-2 text-xs font-semibold text-[#2D6A4F] bg-[#EAF4EC] hover:bg-[#D8F3DC] rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+                className="px-3.5 py-2 text-xs font-semibold text-[#4A6355] bg-white border border-[#DCE5D8] hover:bg-[#F8FBF7] rounded-xl transition-colors cursor-pointer whitespace-nowrap"
               >
                 Random món ngay
               </button>
@@ -372,10 +420,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
                               ` · Đỡ tốn ${formatVND(ev.savedFromPantryCost)} nhờ Kho`}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           <span className="font-mono tabular-nums font-semibold text-[#1B2A22]">
                             -{formatVND(ev.netOutOfPocketCost)}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => setSwappingMeal(pm)}
+                            className="p-1 text-[#2D6A4F] hover:bg-[#D8F3DC] rounded transition-colors cursor-pointer"
+                            title="Đổi sang món khác hoặc sửa khẩu phần"
+                          >
+                            <Repeat className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => onRemovePlannedMeal(pm.id)}
@@ -590,6 +646,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
           })}
         </div>
       </section>
+
+      {/* Meal Swap Modal */}
+      <MealSwapModal
+        isOpen={Boolean(swappingMeal)}
+        onClose={() => setSwappingMeal(null)}
+        meal={swappingMeal}
+        dishes={dishes}
+        pantry={pantry}
+        plannedMeals={plannedMeals}
+        remainingBudget={remainingBudget}
+        totalDays={daysCount}
+        dietaryPreferences={dietaryPreferences}
+        onConfirmSwap={(mealId, updates) => {
+          if (onUpdatePlannedMeal) {
+            onUpdatePlannedMeal(mealId, updates);
+          }
+        }}
+      />
     </div>
   );
 };

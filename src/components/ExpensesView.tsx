@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, TrendingDown } from 'lucide-react';
+import { Plus, Trash2, TrendingDown, Edit2, Check, X } from 'lucide-react';
 import { ExpenseRecord } from '../types';
 import { formatVND, REFERENCE_TODAY } from '../utils/mealMath';
+import { CurrencyInput } from './CurrencyInput';
 
 interface ExpensesViewProps {
   budget: number;
@@ -9,6 +10,7 @@ interface ExpensesViewProps {
   totalSavedFromPantry: number;
   expenses: ExpenseRecord[];
   onAddExpense: (record: Omit<ExpenseRecord, 'id'>) => void;
+  onUpdateExpense?: (id: string, updated: Partial<ExpenseRecord>) => void;
   onDeleteExpense: (id: string) => void;
 }
 
@@ -18,6 +20,7 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   totalSavedFromPantry,
   expenses,
   onAddExpense,
+  onUpdateExpense,
   onDeleteExpense,
 }) => {
   const [title, setTitle] = useState('');
@@ -26,6 +29,12 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
   const [plannedAmount, setPlannedAmount] = useState<number>(35000);
   const [actualAmount, setActualAmount] = useState<number>(25000);
   const [note, setNote] = useState('');
+
+  // Inline editing state for rows
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editActualAmount, setEditActualAmount] = useState<number>(0);
+  const [editPlannedAmount, setEditPlannedAmount] = useState<number>(0);
+  const [editTitle, setEditTitle] = useState<string>('');
 
   const totalActualSpent = expenses.reduce((sum, e) => sum + e.actualAmount, 0);
   const totalPlannedInHistory = expenses.reduce((sum, e) => sum + e.plannedAmount, 0);
@@ -161,31 +170,27 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-3">
               <div>
                 <label className="block text-xs font-medium text-[#385747] mb-1">
                   Chi phí dự kiến (đ)
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1000}
+                <CurrencyInput
                   value={plannedAmount}
-                  onChange={(e) => setPlannedAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full px-3 py-2 text-sm font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
+                  onChange={(val) => setPlannedAmount(val)}
+                  quickDeltas={[5000, 10000, 20000]}
+                  placeholder="Dự kiến ban đầu..."
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#385747] mb-1">
-                  Chi phí thực tế (đ)
+                  Chi phí thực tế thanh toán (đ)
                 </label>
-                <input
-                  type="number"
-                  min={0}
-                  step={1000}
+                <CurrencyInput
                   value={actualAmount}
-                  onChange={(e) => setActualAmount(Math.max(0, Number(e.target.value)))}
-                  className="w-full px-3 py-2 text-sm font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
+                  onChange={(val) => setActualAmount(val)}
+                  quickDeltas={[5000, 10000, 20000]}
+                  placeholder="Số tiền thực chi..."
                 />
               </div>
             </div>
@@ -234,12 +239,81 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                     <th className="py-3 px-3 text-right">Dự kiến</th>
                     <th className="py-3 px-3 text-right">Thực tế</th>
                     <th className="py-3 px-3 text-right">Tiết kiệm</th>
-                    <th className="py-3 px-4 text-right">Xóa</th>
+                    <th className="py-3 px-4 text-center">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E6EFE2] text-sm">
                   {expenses.map((exp) => {
+                    const isEditing = editingId === exp.id;
                     const saved = Math.max(0, exp.plannedAmount - exp.actualAmount, exp.savedFromPantry);
+
+                    if (isEditing) {
+                      return (
+                        <tr key={exp.id} className="bg-[#EEF5EE]/60">
+                          <td className="py-3 px-4" colSpan={2}>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-[#5C7467] font-semibold">Tên khoản chi:</label>
+                              <input
+                                type="text"
+                                value={editTitle}
+                                onChange={(e) => setEditTitle(e.target.value)}
+                                className="w-full px-2.5 py-1 text-xs bg-white border border-[#95D5B2] rounded-lg"
+                              />
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              <label className="text-[10px] text-[#5C7467] font-semibold">Dự kiến:</label>
+                              <CurrencyInput
+                                value={editPlannedAmount}
+                                onChange={(val) => setEditPlannedAmount(val)}
+                                quickDeltas={[5000, 10000]}
+                                placeholder="Dự kiến..."
+                              />
+                            </div>
+                          </td>
+                          <td className="py-3 px-3" colSpan={2}>
+                            <div className="space-y-1">
+                              <label className="text-[10px] text-[#2D6A4F] font-semibold">Thực chi thanh toán:</label>
+                              <CurrencyInput
+                                value={editActualAmount}
+                                onChange={(val) => setEditActualAmount(val)}
+                                quickDeltas={[5000, 10000]}
+                                placeholder="Thực chi..."
+                              />
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-center align-middle">
+                            <div className="flex items-center justify-center gap-1.5 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onUpdateExpense && editTitle.trim()) {
+                                    onUpdateExpense(exp.id, {
+                                      title: editTitle.trim(),
+                                      plannedAmount: editPlannedAmount,
+                                      actualAmount: editActualAmount,
+                                    });
+                                  }
+                                  setEditingId(null);
+                                }}
+                                className="p-1.5 bg-[#2D6A4F] text-white hover:bg-[#1B4332] rounded-lg shadow-2xs cursor-pointer"
+                                title="Lưu chỉnh sửa"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingId(null)}
+                                className="p-1.5 bg-white border border-[#DCE5D8] text-[#5C7467] hover:text-[#1B2A22] rounded-lg cursor-pointer"
+                                title="Hủy"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     return (
                       <tr key={exp.id} className="hover:bg-[#F8FBF7]">
                         <td className="py-3.5 px-4">
@@ -259,15 +333,30 @@ export const ExpensesView: React.FC<ExpensesViewProps> = ({
                         <td className="py-3.5 px-3 text-right font-mono tabular-nums text-xs font-semibold text-[#2D6A4F]">
                           +{formatVND(saved)}
                         </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onDeleteExpense(exp.id)}
-                            className="p-1 text-[#6B7F73] hover:text-[#DC2626] cursor-pointer"
-                            title="Xóa bản ghi"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <td className="py-3.5 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingId(exp.id);
+                                setEditTitle(exp.title);
+                                setEditPlannedAmount(exp.plannedAmount);
+                                setEditActualAmount(exp.actualAmount);
+                              }}
+                              className="p-1.5 text-[#5C7467] hover:text-[#2D6A4F] hover:bg-[#EEF5EE] rounded-lg cursor-pointer"
+                              title="Chỉnh sửa số tiền"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteExpense(exp.id)}
+                              className="p-1.5 text-[#6B7F73] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
+                              title="Xóa bản ghi"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

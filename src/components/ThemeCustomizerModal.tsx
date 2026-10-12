@@ -134,15 +134,15 @@ export const ThemeCustomizerModal: React.FC<ThemeCustomizerModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-2xl bg-white border border-[#DCE5D8] rounded-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col shadow-xl"
+        className="relative w-full max-w-2xl bg-white border border-[#DCE5D8] rounded-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#E6EFE2] bg-[#F8FBF7] flex items-center justify-between">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-[#E6EFE2] bg-[#F8FBF7] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <Palette className="w-5 h-5 text-[#2D6A4F]" />
             <div>

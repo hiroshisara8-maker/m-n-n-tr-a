@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Plus, Check, RotateCcw } from 'lucide-react';
+import { Search, Plus, Check, RotateCcw, ShieldAlert, Ban } from 'lucide-react';
 import {
   Dish,
   DishCategory,
@@ -7,8 +7,9 @@ import {
   DishTaste,
   PantryItem,
   PlannedMeal,
+  DietaryPreferences,
 } from '../types';
-import { evaluateDishWithPantry, formatVND } from '../utils/mealMath';
+import { evaluateDishWithPantry, formatVND, isDishRestricted } from '../utils/mealMath';
 import { DishImage } from './DishImage';
 
 interface ExploreViewProps {
@@ -17,6 +18,7 @@ interface ExploreViewProps {
   peopleCount: number;
   diningMode: 'cook' | 'eat_out';
   plannedMeals: PlannedMeal[];
+  dietaryPreferences?: DietaryPreferences;
   onSelectDishDetail: (dish: Dish) => void;
   onQuickAddMeal: (dishId: string, mode: 'cook' | 'eat_out') => void;
 }
@@ -27,6 +29,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   peopleCount,
   diningMode,
   plannedMeals,
+  dietaryPreferences,
   onSelectDishDetail,
   onQuickAddMeal,
 }) => {
@@ -35,6 +38,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');
   const [tasteFilter, setTasteFilter] = useState<string>('ALL');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('ALL');
+  const [dietaryFilter, setDietaryFilter] = useState<'ALL' | 'SAFE_ONLY' | 'FLAGGED'>('ALL');
   const [minRatingFilter, setMinRatingFilter] = useState<number>(0);
   const [sortBy, setSortBy] = useState<'pantry' | 'price_asc' | 'rating' | 'time'>('pantry');
 
@@ -82,6 +86,11 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
       }
       if (minRatingFilter > 0 && dish.rating < minRatingFilter) {
         return false;
+      }
+      if (dietaryFilter !== 'ALL' && dietaryPreferences) {
+        const res = isDishRestricted(dish, dietaryPreferences);
+        if (dietaryFilter === 'SAFE_ONLY' && res.isRestricted) return false;
+        if (dietaryFilter === 'FLAGGED' && !res.isRestricted) return false;
       }
       return true;
     })
@@ -179,36 +188,79 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
           </div>
         </div>
 
-        {/* Interactive Category & Difficulty Filter Controls */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#E6EFE2]">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-[#5C7467] mr-1">Loại món:</span>
-            <button
-              type="button"
-              onClick={() => setCategoryFilter('ALL')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                categoryFilter === 'ALL'
-                  ? 'bg-[#2D6A4F] text-white'
-                  : 'bg-[#F6F9F5] text-[#4A6355] hover:text-[#1B2A22]'
-              }`}
-            >
-              Tất cả ({dishes.length})
-            </button>
-            {categories.map((cat) => (
+        {/* Interactive Category & Difficulty & Dietary Filter Controls */}
+        <div className="space-y-2.5 pt-2 border-t border-[#E6EFE2]">
+          {/* Dietary safety filter chips */}
+          {dietaryPreferences && (
+            <div className="flex flex-wrap items-center gap-1.5 pb-2 border-b border-[#F0F5EE]">
+              <span className="text-xs font-semibold text-[#DC2626] flex items-center gap-1 mr-1">
+                <ShieldAlert className="w-3.5 h-3.5" /> Khẩu vị an toàn:
+              </span>
               <button
-                key={cat}
                 type="button"
-                onClick={() => setCategoryFilter(cat)}
+                onClick={() => setDietaryFilter('ALL')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                  dietaryFilter === 'ALL'
+                    ? 'bg-[#1B2A22] text-white'
+                    : 'bg-[#F6F9F5] text-[#4A6355] hover:text-[#1B2A22]'
+                }`}
+              >
+                Tất cả món
+              </button>
+              <button
+                type="button"
+                onClick={() => setDietaryFilter('SAFE_ONLY')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                  dietaryFilter === 'SAFE_ONLY'
+                    ? 'bg-[#059669] text-white shadow-2xs'
+                    : 'bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] hover:bg-[#D1FAE5]'
+                }`}
+              >
+                <Check className="w-3 h-3 stroke-[3]" /> Chỉ món An toàn (Không dị ứng / Không ghét)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDietaryFilter('FLAGGED')}
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                  dietaryFilter === 'FLAGGED'
+                    ? 'bg-[#DC2626] text-white shadow-2xs'
+                    : 'bg-[#FEF2F2] text-[#991B1B] border border-[#FECACA] hover:bg-[#FEE2E2]'
+                }`}
+              >
+                <ShieldAlert className="w-3 h-3" /> Món bị cảnh báo
+              </button>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-[#5C7467] mr-1">Loại món:</span>
+              <button
+                type="button"
+                onClick={() => setCategoryFilter('ALL')}
                 className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
-                  categoryFilter === cat
+                  categoryFilter === 'ALL'
                     ? 'bg-[#2D6A4F] text-white'
                     : 'bg-[#F6F9F5] text-[#4A6355] hover:text-[#1B2A22]'
                 }`}
               >
-                {cat}
+                Tất cả ({dishes.length})
               </button>
-            ))}
-          </div>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategoryFilter(cat)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                    categoryFilter === cat
+                      ? 'bg-[#2D6A4F] text-white'
+                      : 'bg-[#F6F9F5] text-[#4A6355] hover:text-[#1B2A22]'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-[#5C7467] mr-1">Độ khó:</span>
@@ -239,6 +291,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
             ))}
           </div>
         </div>
+      </div>
       </div>
 
       {/* Results Grid */}
@@ -298,6 +351,26 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
                     </div>
 
                     <div>
+                      {dietaryPreferences && (() => {
+                        const res = isDishRestricted(dish, dietaryPreferences);
+                        if (res.hasAllergy) {
+                          return (
+                            <div className="flex items-center gap-1 text-[11px] font-semibold text-[#DC2626] bg-[#FEF2F2] border border-[#FECACA] px-2 py-0.5 rounded-md mb-1.5 w-fit">
+                              <ShieldAlert className="w-3.5 h-3.5" />
+                              <span>Dị ứng: {res.allergyMatches[0]}</span>
+                            </div>
+                          );
+                        }
+                        if (res.hasDislike || res.isExcluded) {
+                          return (
+                            <div className="flex items-center gap-1 text-[11px] font-semibold text-[#D97706] bg-[#FFFBEB] border border-[#FDE68A] px-2 py-0.5 rounded-md mb-1.5 w-fit">
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Món ghét: {res.dislikeMatches[0] || 'Đã cấm'}</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                       <h2
                         onClick={() => onSelectDishDetail(dish)}
                         className="text-base font-semibold text-[#1B2A22] hover:text-[#2D6A4F] cursor-pointer leading-snug"

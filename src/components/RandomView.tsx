@@ -1,15 +1,35 @@
 import React, { useState } from 'react';
-import { Shuffle, Sparkles, Check, Plus, Users, Utensils } from 'lucide-react';
-import { CommunityPost, Dish, PantryItem } from '../types';
-import { evaluateDishWithPantry, formatVND } from '../utils/mealMath';
+import {
+  Shuffle,
+  Sparkles,
+  Check,
+  Plus,
+  Users,
+  Utensils,
+  Repeat,
+  ShieldCheck,
+  ArrowRight,
+  ShieldAlert,
+  AlertTriangle,
+} from 'lucide-react';
+import { CommunityPost, Dish, PantryItem, PlannedMeal, DietaryPreferences } from '../types';
+import {
+  evaluateDishWithPantry,
+  formatVND,
+  getDishAllergyMatches,
+  getDishDislikeMatches,
+  isDishRestricted,
+} from '../utils/mealMath';
 import { DishImage } from './DishImage';
 
 interface RandomViewProps {
   dishes: Dish[];
   communityPosts: CommunityPost[];
   pantry: PantryItem[];
+  plannedMeals?: PlannedMeal[];
   peopleCount: number;
   remainingBudget: number;
+  dietaryPreferences?: DietaryPreferences;
   onQuickAddMeal: (dishId: string, mode: 'cook' | 'eat_out') => void;
   onSelectDishDetail: (dish: Dish) => void;
 }
@@ -18,8 +38,10 @@ export const RandomView: React.FC<RandomViewProps> = ({
   dishes,
   communityPosts,
   pantry,
+  plannedMeals = [],
   peopleCount,
   remainingBudget,
+  dietaryPreferences,
   onQuickAddMeal,
   onSelectDishDetail,
 }) => {
@@ -27,12 +49,16 @@ export const RandomView: React.FC<RandomViewProps> = ({
     Math.min(50000, Math.max(20000, remainingBudget))
   );
   const [sourceMode, setSourceMode] = useState<'pantry_smart' | 'community'>('pantry_smart');
+  const [avoidPlanned, setAvoidPlanned] = useState<boolean>(true);
+  const [avoidDietary, setAvoidDietary] = useState<boolean>(true);
   const [customIngredientsInput, setCustomIngredientsInput] = useState<string>(
     pantry.slice(0, 4).map((p) => p.name).join(', ')
   );
   const [pickedDish, setPickedDish] = useState<Dish | null>(dishes[0] || null);
   const [pickedCommunity, setPickedCommunity] = useState<CommunityPost | null>(null);
   const [justAdded, setJustAdded] = useState(false);
+
+  const plannedIds = new Set(plannedMeals.map((m) => m.dishId));
 
   const handleSpinRandom = () => {
     setJustAdded(false);
@@ -41,7 +67,10 @@ export const RandomView: React.FC<RandomViewProps> = ({
         (p) => p.costPerServing * peopleCount <= maxMealBudget * 1.5
       );
       const pool = affordablePosts.length > 0 ? affordablePosts : communityPosts;
-      const randomPost = pool[Math.floor(Math.random() * pool.length)];
+      const otherPosts = pool.filter((p) => p.id !== pickedCommunity?.id);
+      const randomPost = (otherPosts.length > 0 ? otherPosts : pool)[
+        Math.floor(Math.random() * (otherPosts.length > 0 ? otherPosts.length : pool.length))
+      ];
       setPickedCommunity(randomPost);
       setPickedDish(null);
       return;
@@ -54,7 +83,35 @@ export const RandomView: React.FC<RandomViewProps> = ({
       .map((s) => s.trim())
       .filter(Boolean);
 
-    const scoredDishes = dishes.map((dish) => {
+    let candidates = dishes;
+
+    // Filter out allergic and disliked dishes
+    if (avoidDietary && dietaryPreferences) {
+      const nonAllergic = candidates.filter(
+        (d) => getDishAllergyMatches(d, dietaryPreferences).length === 0
+      );
+      const safe = nonAllergic.filter(
+        (d) =>
+          getDishDislikeMatches(d, dietaryPreferences).length === 0 &&
+          !dietaryPreferences.excludedDishIds?.includes(d.id)
+      );
+      candidates = safe.length > 0 ? safe : nonAllergic.length > 0 ? nonAllergic : candidates;
+    }
+
+    if (avoidPlanned && plannedIds.size > 0) {
+      const nonPlanned = candidates.filter((d) => !plannedIds.has(d.id));
+      if (nonPlanned.length > 0) {
+        candidates = nonPlanned;
+      }
+    }
+
+    // Also avoid the current pickedDish to always give a fresh pick
+    const nonCurrent = candidates.filter((d) => d.id !== pickedDish?.id);
+    if (nonCurrent.length > 0) {
+      candidates = nonCurrent;
+    }
+
+    const scoredDishes = candidates.map((dish) => {
       const ev = evaluateDishWithPantry(dish, pantry, peopleCount, 'cook');
       const keywordHits = keywords.filter((kw) =>
         dish.ingredients.some((i) => i.name.toLowerCase().includes(kw))
@@ -167,10 +224,44 @@ export const RandomView: React.FC<RandomViewProps> = ({
             />
           </div>
 
+          {/* Anti-duplicate toggle */}
+          {plannedMeals.length > 0 && (
+            <div className="flex items-center justify-between p-2.5 bg-[#EEF5EE] border border-[#CFE0D2] rounded-xl text-xs">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#2D6A4F] shrink-0" />
+                <span className="text-[#1B2A22] font-medium">Tránh các món đã có trong Thực đơn tuần</span>
+              </div>
+              <input
+                type="checkbox"
+                checked={avoidPlanned}
+                onChange={(e) => setAvoidPlanned(e.target.checked)}
+                className="w-4 h-4 rounded text-[#2D6A4F] focus:ring-[#2D6A4F] accent-[#2D6A4F] cursor-pointer"
+              />
+            </div>
+          )}
+
+          {/* Anti-allergy & dislike toggle */}
+          {dietaryPreferences && (
+            <div className="flex items-center justify-between p-2.5 bg-[#FEF2F2] border border-[#FECACA] rounded-xl text-xs">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-[#DC2626] shrink-0" />
+                <span className="text-[#991B1B] font-medium">
+                  Tránh các món dị ứng & món ghét
+                </span>
+              </div>
+              <input
+                type="checkbox"
+                checked={avoidDietary}
+                onChange={(e) => setAvoidDietary(e.target.checked)}
+                className="w-4 h-4 rounded text-[#DC2626] focus:ring-[#DC2626] accent-[#DC2626] cursor-pointer"
+              />
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleSpinRandom}
-            className="w-full py-3 px-4 text-sm font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full py-3 px-4 text-sm font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs"
           >
             <Shuffle className="w-4 h-4" />
             Quay chọn món ngẫu nhiên ngay!
@@ -232,14 +323,14 @@ export const RandomView: React.FC<RandomViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap gap-2.5 pt-1">
+                  <div className="flex flex-wrap gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => {
                         onQuickAddMeal(pickedDish.id, 'cook');
                         setJustAdded(true);
                       }}
-                      className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl flex items-center gap-1.5 cursor-pointer"
+                      className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs"
                     >
                       {justAdded ? (
                         <>
@@ -255,8 +346,17 @@ export const RandomView: React.FC<RandomViewProps> = ({
                     </button>
                     <button
                       type="button"
+                      onClick={handleSpinRandom}
+                      className="px-3.5 py-2.5 text-xs font-semibold text-[#4A6355] hover:text-[#1B2A22] bg-white border border-[#DCE5D8] hover:bg-[#F8FBF7] rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors"
+                      title="Quay đổi sang món khác"
+                    >
+                      <Repeat className="w-3.5 h-3.5" />
+                      Đổi món khác
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => onSelectDishDetail(pickedDish)}
-                      className="px-4 py-2.5 text-xs font-semibold text-[#2D6A4F] bg-[#EEF5EE] hover:bg-[#D8F3DC] rounded-xl cursor-pointer"
+                      className="px-3.5 py-2.5 text-xs font-semibold text-[#2D6A4F] bg-[#EEF5EE] hover:bg-[#D8F3DC] rounded-xl cursor-pointer transition-colors"
                     >
                       Xem chi tiết cách làm
                     </button>

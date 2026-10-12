@@ -23,6 +23,7 @@ import { CommunityPost, DishTaste, DishDifficulty } from '../types';
 import { DISH_IMAGES } from '../data/initialData';
 import { formatVND } from '../utils/mealMath';
 import { DishImage } from './DishImage';
+import { CurrencyInput } from './CurrencyInput';
 
 export interface UserProfileInfo {
   displayName: string;
@@ -719,13 +720,11 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                 <label className="block text-xs font-medium text-[#385747] mb-1">
                   Chi phí / khẩu phần (VNĐ)
                 </label>
-                <input
-                  type="number"
-                  min={1000}
-                  step={1000}
+                <CurrencyInput
                   value={costPerServing}
-                  onChange={(e) => setCostPerServing(Number(e.target.value))}
-                  className="w-full px-3.5 py-2 text-sm font-mono tabular-nums bg-[#F6F9F5] border border-[#DCE5D8] rounded-xl"
+                  onChange={(val) => setCostPerServing(val)}
+                  quickDeltas={[5000, 10000, 20000]}
+                  placeholder="VD: 25.000..."
                 />
               </div>
               <div>

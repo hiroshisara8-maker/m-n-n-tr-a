@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { X, Plus, Check, Star, Send, Utensils, ShoppingBag } from 'lucide-react';
-import { Dish, MealSlotType, PantryItem } from '../types';
-import { evaluateDishWithPantry, formatVND } from '../utils/mealMath';
+import { X, Plus, Check, Star, Send, Utensils, ShoppingBag, ShieldAlert, Ban, AlertTriangle } from 'lucide-react';
+import { Dish, MealSlotType, PantryItem, DietaryPreferences } from '../types';
+import { evaluateDishWithPantry, formatVND, isDishRestricted } from '../utils/mealMath';
 import { DishImage } from './DishImage';
 
 interface DishDetailModalProps {
@@ -10,6 +10,8 @@ interface DishDetailModalProps {
   servings: number;
   daysCount: number;
   defaultMode: 'cook' | 'eat_out';
+  dietaryPreferences?: DietaryPreferences;
+  onToggleExcludeDish?: (dishId: string) => void;
   onClose: () => void;
   onAddToMealPlan: (
     dishId: string,
@@ -26,6 +28,8 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
   servings,
   daysCount,
   defaultMode,
+  dietaryPreferences,
+  onToggleExcludeDish,
   onClose,
   onAddToMealPlan,
   onAddComment,
@@ -41,6 +45,7 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
 
   if (!dish) return null;
 
+  const restricted = isDishRestricted(dish, dietaryPreferences);
   const evalCook = evaluateDishWithPantry(dish, pantry, servings, 'cook');
   const eatOutTotal = dish.eatOutCostPerPerson * servings;
 
@@ -67,16 +72,16 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1B2A22]/50 backdrop-blur-xs p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1B2A22]/50 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="relative w-full max-w-4xl bg-[#FFFFFF] border border-[#DCE5D8] rounded-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col"
+        className="relative w-full max-w-4xl bg-[#FFFFFF] border border-[#DCE5D8] rounded-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Top bar */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#E6EFE2] bg-[#F8FBF7]">
-          <div className="flex items-center gap-2 text-xs text-[#4A6355]">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-[#E6EFE2] bg-[#F8FBF7]">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-[#4A6355] flex-wrap">
             <span>{dish.category}</span>
             <span aria-hidden="true">·</span>
             <span>{dish.taste}</span>
@@ -100,6 +105,47 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
 
         {/* Scrollable body */}
         <div className="overflow-y-auto p-6 space-y-8">
+          {/* Dietary restriction notice */}
+          {restricted.isRestricted && (
+            <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              restricted.hasAllergy
+                ? 'bg-[#FEF2F2] border-[#F87171] text-[#991B1B]'
+                : 'bg-[#FFFBEB] border-[#FBBF24] text-[#92400E]'
+            }`}>
+              <div className="flex items-start gap-3">
+                {restricted.hasAllergy ? (
+                  <ShieldAlert className="w-5 h-5 text-[#DC2626] shrink-0 mt-0.5" />
+                ) : (
+                  <Ban className="w-5 h-5 text-[#D97706] shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <h4 className="text-xs sm:text-sm font-bold">
+                    {restricted.hasAllergy
+                      ? 'Cảnh báo dị ứng thực phẩm!'
+                      : 'Món ăn không hợp khẩu vị (Món ghét)'}
+                  </h4>
+                  <p className="text-xs mt-0.5 opacity-90">
+                    Món này có chứa: <strong>{restricted.reasons.join(', ')}</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {onToggleExcludeDish && (
+                <button
+                  type="button"
+                  onClick={() => onToggleExcludeDish(dish.id)}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${
+                    restricted.isExcluded
+                      ? 'bg-[#DC2626] text-white hover:bg-[#B91C1C]'
+                      : 'bg-white border border-[#DCE5D8] text-[#1B2A22] hover:bg-[#FEF2F2] hover:text-[#DC2626]'
+                  }`}
+                >
+                  {restricted.isExcluded ? 'Đang cấm món này' : 'Cấm món này'}
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Hero Grid */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
             <div className="md:col-span-5">

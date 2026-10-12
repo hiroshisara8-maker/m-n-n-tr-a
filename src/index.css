@@ -21,6 +21,7 @@
     background-color: var(--mk-bg);
     color: var(--mk-text);
     transition: background-color 0.2s ease, color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
   }
 
   h1, h2, .font-display {
