@@ -106,7 +106,7 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
         {/* Scrollable body */}
         <div className="overflow-y-auto p-6 space-y-8">
           {/* Dietary restriction notice */}
-          {restricted.isRestricted && (
+          {restricted.isRestricted ? (
             <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
               restricted.hasAllergy
                 ? 'bg-[#FEF2F2] border-[#F87171] text-[#991B1B]'
@@ -144,6 +144,21 @@ export const DishDetailModal: React.FC<DishDetailModalProps> = ({
                 </button>
               )}
             </div>
+          ) : (
+            onToggleExcludeDish && (
+              <div className="flex items-center justify-between p-3 bg-[#F9FBFA] border border-[#DCE5D8] rounded-xl text-xs">
+                <span className="text-[#5C7467]">
+                  Món này an toàn và phù hợp với khẩu vị hiện tại của bạn.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onToggleExcludeDish(dish.id)}
+                  className="px-2.5 py-1 text-xs text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg transition-colors cursor-pointer font-medium border border-[#FECACA]"
+                >
+                  🚫 Cấm món này (Dị ứng / Ghét)
+                </button>
+              </div>
+            )
           )}
 
           {/* Hero Grid */}

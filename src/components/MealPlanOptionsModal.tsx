@@ -53,6 +53,7 @@ export const MealPlanOptionsModal: React.FC<MealPlanOptionsModalProps> = ({
     (dietaryPreferences?.customAllergies?.length || 0) +
     (dietaryPreferences?.dislikes?.length || 0) +
     (dietaryPreferences?.customDislikes?.length || 0) +
+    (dietaryPreferences?.customItems?.length || 0) +
     (dietaryPreferences?.excludedDishIds?.length || 0);
 
   const toggleSlot = (s: MealSlotType) => {

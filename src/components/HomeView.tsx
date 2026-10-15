@@ -262,18 +262,21 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </span>
                 <span className="text-[11px] text-[#7F1D1D] truncate block">
                   {dietaryPreferences &&
-                  (dietaryPreferences.allergies.length +
-                    dietaryPreferences.customAllergies.length +
-                    dietaryPreferences.dislikes.length +
-                    dietaryPreferences.customDislikes.length +
-                    dietaryPreferences.excludedDishIds.length) > 0
+                  ((dietaryPreferences.allergies?.length || 0) +
+                    (dietaryPreferences.customAllergies?.length || 0) +
+                    (dietaryPreferences.dislikes?.length || 0) +
+                    (dietaryPreferences.customDislikes?.length || 0) +
+                    (dietaryPreferences.customItems?.length || 0) +
+                    (dietaryPreferences.excludedDishIds?.length || 0)) > 0
                     ? `Đang né ${
-                        dietaryPreferences.allergies.length +
-                        dietaryPreferences.customAllergies.length
+                        (dietaryPreferences.allergies?.length || 0) +
+                        (dietaryPreferences.customAllergies?.length || 0) +
+                        (dietaryPreferences.customItems?.filter((i) => i.type === 'allergy').length || 0)
                       } chất dị ứng và ${
-                        dietaryPreferences.dislikes.length +
-                        dietaryPreferences.customDislikes.length +
-                        dietaryPreferences.excludedDishIds.length
+                        (dietaryPreferences.dislikes?.length || 0) +
+                        (dietaryPreferences.customDislikes?.length || 0) +
+                        (dietaryPreferences.customItems?.filter((i) => i.type === 'dislike').length || 0) +
+                        (dietaryPreferences.excludedDishIds?.length || 0)
                       } món ghét`
                     : 'Chưa cài đặt chất dị ứng/món ghét nào (bấm để thêm)'}
                 </span>

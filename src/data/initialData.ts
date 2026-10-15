@@ -1315,5 +1315,6 @@ export const INITIAL_DIETARY_PREFERENCES: DietaryPreferences = {
   dislikes: [],
   customAllergies: [],
   customDislikes: [],
+  customItems: [],
   excludedDishIds: [],
 };

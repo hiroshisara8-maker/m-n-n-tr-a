@@ -125,11 +125,23 @@ export interface ExpenseRecord {
   note: string;
 }
 
+export interface CustomDietaryItem {
+  id: string;
+  name: string;
+  categoryType: 'dish' | 'ingredient';
+  type: 'allergy' | 'dislike';
+  severity?: 'high' | 'medium' | 'low';
+  ingredients?: string[];
+  note?: string;
+  createdAt?: string;
+}
+
 export interface DietaryPreferences {
   allergies: string[];
   dislikes: string[];
   customAllergies: string[];
   customDislikes: string[];
+  customItems?: CustomDietaryItem[];
   excludedDishIds: string[];
 }
 

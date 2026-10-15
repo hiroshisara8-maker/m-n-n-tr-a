@@ -265,6 +265,21 @@ export function getDishAllergyMatches(dish: Dish, prefs?: DietaryPreferences): s
     }
   }
 
+  // Match from structured custom items (created by user)
+  for (const item of prefs.customItems || []) {
+    if (item.type === 'allergy' && item.name && item.name.trim()) {
+      const trimmedName = item.name.trim();
+      allKeywords.push({ label: trimmedName, kw: trimmedName });
+      if (Array.isArray(item.ingredients)) {
+        for (const ing of item.ingredients) {
+          if (ing && ing.trim()) {
+            allKeywords.push({ label: `${trimmedName} (${ing.trim()})`, kw: ing.trim() });
+          }
+        }
+      }
+    }
+  }
+
   const searchableTexts = [
     dish.name,
     dish.subtitle,
@@ -274,7 +289,9 @@ export function getDishAllergyMatches(dish: Dish, prefs?: DietaryPreferences): s
   const matchedLabels = new Set<string>();
   for (const item of allKeywords) {
     const kwLower = item.kw.toLowerCase();
-    const isMatched = searchableTexts.some((text) => text.includes(kwLower));
+    const isMatched = searchableTexts.some(
+      (text) => text.includes(kwLower) || (kwLower.length > 3 && kwLower.includes(text))
+    );
     if (isMatched && !matchedLabels.has(item.label)) {
       matchedLabels.add(item.label);
       matches.push(item.label);
@@ -314,6 +331,21 @@ export function getDishDislikeMatches(dish: Dish, prefs?: DietaryPreferences): s
     }
   }
 
+  // Match from structured custom items (created by user)
+  for (const item of prefs.customItems || []) {
+    if (item.type === 'dislike' && item.name && item.name.trim()) {
+      const trimmedName = item.name.trim();
+      allKeywords.push({ label: trimmedName, kw: trimmedName });
+      if (Array.isArray(item.ingredients)) {
+        for (const ing of item.ingredients) {
+          if (ing && ing.trim()) {
+            allKeywords.push({ label: `${trimmedName} (${ing.trim()})`, kw: ing.trim() });
+          }
+        }
+      }
+    }
+  }
+
   const searchableTexts = [
     dish.name,
     dish.subtitle,
@@ -323,7 +355,9 @@ export function getDishDislikeMatches(dish: Dish, prefs?: DietaryPreferences): s
   const matchedLabels = new Set<string>();
   for (const item of allKeywords) {
     const kwLower = item.kw.toLowerCase();
-    const isMatched = searchableTexts.some((text) => text.includes(kwLower));
+    const isMatched = searchableTexts.some(
+      (text) => text.includes(kwLower) || (kwLower.length > 3 && kwLower.includes(text))
+    );
     if (isMatched && !matchedLabels.has(item.label)) {
       matchedLabels.add(item.label);
       matches.push(item.label);
