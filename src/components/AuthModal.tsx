@@ -16,7 +16,7 @@ import {
 
 export interface AuthAccount {
   id: string;
-  provider: 'google' | 'facebook' | 'email' | 'guest';
+  provider: 'google' | 'email' | 'guest';
   email: string;
   displayName: string;
   avatarUrl: string;
@@ -44,7 +44,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   primaryColor = '#2D6A4F',
   defaultEmail = 'vyt371953@gmail.com',
 }) => {
-  const [activeStep, setActiveStep] = useState<'portal' | 'google_dialog' | 'facebook_dialog' | 'email_form'>('portal');
+  const [activeStep, setActiveStep] = useState<'portal' | 'google_dialog' | 'email_form'>('portal');
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -69,33 +69,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         handle: `@${chosenEmail.split('@')[0]}`,
         avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(chosenName)}&backgroundColor=b6e3f4`,
         bio: 'Thành viên Món Khôn · Đăng nhập qua Google',
-        loggedInAt: new Date().toISOString(),
-      };
-      setIsLoading(false);
-      onLoginSuccess(account);
-      onClose();
-    }, 700);
-  };
-
-  // Handle Facebook Login Simulation
-  const handleStartFacebookLogin = () => {
-    setActiveStep('facebook_dialog');
-  };
-
-  const handleConfirmFacebookLogin = () => {
-    setIsLoading(true);
-    setErrorMessage('');
-    setTimeout(() => {
-      const fbName = defaultEmail ? defaultEmail.split('@')[0] : 'Người dùng Facebook';
-      const cleanName = fbName.charAt(0).toUpperCase() + fbName.slice(1);
-      const account: AuthAccount = {
-        id: `fb-${Date.now()}`,
-        provider: 'facebook',
-        email: defaultEmail || 'user.facebook@example.com',
-        displayName: `${cleanName} (Facebook)`,
-        handle: `@${fbName}.fb`,
-        avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(fbName)}&backgroundColor=c0aede`,
-        bio: 'Thành viên Món Khôn · Đăng nhập qua Facebook',
         loggedInAt: new Date().toISOString(),
       };
       setIsLoading(false);
@@ -166,7 +139,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="space-y-1">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-[#EEF5EE] text-[#2D6A4F] mb-1">
                 {currentAccount.provider === 'google' && 'Đăng nhập với Google'}
-                {currentAccount.provider === 'facebook' && 'Đăng nhập với Facebook'}
                 {currentAccount.provider === 'email' && 'Tài khoản Email'}
                 {currentAccount.provider === 'guest' && 'Khách dùng thử'}
               </div>
@@ -220,7 +192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         ) : null}
 
         {/* ======================================================== */}
-        {/* VIEW 1: PORTAL CHÍNH - LỰA CHỌN GOOGLE / FACEBOOK / EMAIL */}
+        {/* VIEW 1: PORTAL CHÍNH - ĐĂNG NHẬP GOOGLE HOẶC EMAIL */}
         {/* ======================================================== */}
         {(!currentAccount || activeStep !== 'portal') && activeStep === 'portal' && (
           <div className="p-6 sm:p-8 space-y-6">
@@ -237,13 +209,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </p>
             </div>
 
-            {/* Social OAuth Buttons */}
+            {/* Google One-Click Login Button */}
             <div className="space-y-3 pt-2">
-              {/* GOOGLE BUTTON */}
               <button
                 type="button"
                 onClick={handleStartGoogleLogin}
-                className="w-full py-3 px-4 rounded-2xl border-2 border-[#DCE5D8] hover:border-[#4285F4] bg-white hover:bg-[#F8FAFC] text-sm font-semibold text-[#1F2937] flex items-center justify-center gap-3 transition-all shadow-2xs hover:shadow-sm cursor-pointer group"
+                className="w-full py-3.5 px-5 rounded-2xl border-2 border-[#DCE5D8] hover:border-[#4285F4] bg-white hover:bg-[#F8FAFC] text-sm font-bold text-[#1F2937] flex items-center justify-center gap-3 transition-all shadow-sm hover:shadow-md cursor-pointer group"
               >
                 {/* Official Google G Logo */}
                 <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -264,20 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                   />
                 </svg>
-                <span>Đăng nhập với Google</span>
-              </button>
-
-              {/* FACEBOOK BUTTON */}
-              <button
-                type="button"
-                onClick={handleStartFacebookLogin}
-                className="w-full py-3 px-4 rounded-2xl bg-[#1877F2] hover:bg-[#166FE5] text-white text-sm font-semibold flex items-center justify-center gap-3 transition-all shadow-2xs hover:shadow-sm cursor-pointer"
-              >
-                {/* Official Facebook Logo */}
-                <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
-                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
-                </svg>
-                <span>Đăng nhập với Facebook</span>
+                <span>Tiếp tục với tài khoản Google</span>
               </button>
             </div>
 
@@ -411,81 +369,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               Để tiếp tục, Google sẽ chia sẻ tên, địa chỉ email, tùy chọn ngôn ngữ và ảnh hồ sơ của
               bạn với ứng dụng Món Khôn.
             </div>
-          </div>
-        )}
-
-        {/* ======================================================== */}
-        {/* VIEW 3: FACEBOOK AUTHORIZATION DIALOG SIMULATOR */}
-        {/* ======================================================== */}
-        {activeStep === 'facebook_dialog' && (
-          <div className="p-6 sm:p-8 space-y-6">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-[#1877F2] text-white flex items-center justify-center font-bold text-xs">
-                  f
-                </span>
-                <span className="text-sm font-semibold text-[#1877F2]">Đăng nhập với Facebook</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setActiveStep('portal')}
-                className="text-xs text-gray-500 hover:text-gray-800 font-medium cursor-pointer"
-              >
-                Quay lại
-              </button>
-            </div>
-
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 rounded-full bg-blue-100 text-[#1877F2] flex items-center justify-center mx-auto shadow-inner text-2xl font-bold">
-                f
-              </div>
-              <h3 className="text-lg font-bold text-gray-900">
-                Ủy quyền tài khoản Facebook
-              </h3>
-              <p className="text-xs text-gray-500 max-w-xs mx-auto">
-                Ứng dụng <strong>Món Khôn</strong> sẽ nhận được tên và ảnh đại diện công khai của bạn.
-              </p>
-            </div>
-
-            <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 text-xs space-y-2 text-gray-600">
-              <div className="flex items-center gap-2 text-emerald-600 font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Quyền truy cập tên và ảnh đại diện</span>
-              </div>
-              <div className="flex items-center gap-2 text-emerald-600 font-semibold">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Đồng bộ thực đơn và bài viết cộng đồng</span>
-              </div>
-              <p className="text-[11px] text-gray-400 pt-1 border-t border-gray-200">
-                Ứng dụng sẽ không bao giờ đăng bài viết lên dòng thời gian Facebook mà không có sự
-                đồng ý của bạn.
-              </p>
-            </div>
-
-            {isLoading ? (
-              <div className="py-2 flex items-center justify-center gap-2 text-xs font-semibold text-[#1877F2]">
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                <span>Đang hoàn tất đăng nhập Facebook...</span>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleConfirmFacebookLogin}
-                  className="w-full py-3 bg-[#1877F2] hover:bg-[#166FE5] text-white text-sm font-semibold rounded-xl transition-colors cursor-pointer shadow-sm flex items-center justify-center gap-2"
-                >
-                  <span>Tiếp tục dưới tên Facebook</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveStep('portal')}
-                  className="w-full py-2.5 text-xs font-semibold text-gray-500 hover:text-gray-800 cursor-pointer"
-                >
-                  Hủy bỏ
-                </button>
-              </div>
-            )}
           </div>
         )}
 
