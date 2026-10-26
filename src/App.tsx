@@ -210,7 +210,27 @@ export default function App() {
         })
       );
     } catch {
-      // ignore storage errors
+      // Fallback: If quota exceeded due to multiple high-res photos, save only the 10 most recent posts
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            budget,
+            daysCount,
+            peopleCount,
+            diningMode,
+            pantry,
+            plannedMeals,
+            expenses,
+            communityPosts: communityPosts.slice(0, 10),
+            userProfile,
+            themeConfig,
+            dietaryPreferences,
+          })
+        );
+      } catch {
+        // ignore storage errors
+      }
     }
   }, [
     budget,
@@ -795,7 +815,7 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#1B2A22]">Cổng Đăng Nhập</span>
                 <span className="text-[10px] font-semibold text-[#2D6A4F] bg-white px-2 py-0.5 rounded-full border border-[#CFE0D2]">
-                  Google · FB
+                  Google · Email
                 </span>
               </div>
               <p className="text-[11px] text-[#5C7467] leading-snug">

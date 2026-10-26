@@ -18,6 +18,10 @@ import {
   Sparkles,
   X,
   Check,
+  RefreshCw,
+  AlertCircle,
+  CheckCircle2,
+  Smartphone,
 } from 'lucide-react';
 import { CommunityPost, DishTaste, DishDifficulty } from '../types';
 import { DISH_IMAGES } from '../data/initialData';
@@ -65,16 +69,102 @@ interface CommunityViewProps {
 }
 
 /**
- * Compress and resize an uploaded image file from user's device album
- * so it renders crisply and fits comfortably in localStorage.
+ * Ultra-resilient mobile photo compressor:
+ * 1. Handles modern mobile phone cameras (HEIC, JPEG, PNG, WebP)
+ * 2. Uses createImageBitmap where available for native orientation handling & background decoding
+ * 3. Uses URL.createObjectURL + Canvas for low memory footprint on iPhones and Androids
+ * 4. Resizes to max 960x960 and 0.82 JPEG quality (~120KB-200KB), avoiding localStorage QuotaExceeded errors
  */
-function readAndCompressImageFile(file: File, maxWidth = 1000): Promise<string> {
+async function readAndCompressImageFile(
+  file: File,
+  maxWidth = 960,
+  maxHeight = 960
+): Promise<string> {
+  // 1. Try modern createImageBitmap (fastest, memory safe on iOS 15+ and Android)
+  if (typeof window !== 'undefined' && typeof window.createImageBitmap === 'function') {
+    try {
+      const bitmap = await window.createImageBitmap(file);
+      let { width, height } = bitmap;
+      if (width > maxWidth || height > maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, width);
+      canvas.height = Math.max(1, height);
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close?.();
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        if (dataUrl && dataUrl.startsWith('data:image/')) {
+          return dataUrl;
+        }
+      }
+    } catch {
+      // fallback to Image
+    }
+  }
+
+  // 2. Try URL.createObjectURL with Image (avoids huge base64 strings in memory during decode)
+  return new Promise((resolve, reject) => {
+    let objectUrl = '';
+    try {
+      objectUrl = URL.createObjectURL(file);
+    } catch {
+      objectUrl = '';
+    }
+
+    if (objectUrl) {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          // ignore
+        }
+        let { width, height } = img;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(img.src);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+
+      img.onerror = () => {
+        try {
+          URL.revokeObjectURL(objectUrl);
+        } catch {
+          // ignore
+        }
+        fallbackWithFileReader(file, maxWidth).then(resolve).catch(reject);
+      };
+
+      img.src = objectUrl;
+    } else {
+      fallbackWithFileReader(file, maxWidth).then(resolve).catch(reject);
+    }
+  });
+}
+
+function fallbackWithFileReader(file: File, maxWidth = 960): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const dataUrl = event.target?.result as string;
-      if (!dataUrl) {
-        reject(new Error('Không đọc được file ảnh'));
+    reader.onload = (e) => {
+      const data = e.target?.result as string;
+      if (!data) {
+        reject(new Error('Không đọc được dữ liệu ảnh'));
         return;
       }
       const img = new Image();
@@ -84,17 +174,17 @@ function readAndCompressImageFile(file: File, maxWidth = 1000): Promise<string> 
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(dataUrl);
-          return;
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.82));
+        } else {
+          resolve(data);
         }
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
       };
-      img.onerror = () => resolve(dataUrl);
-      img.src = dataUrl;
+      img.onerror = () => resolve(data);
+      img.src = data;
     };
-    reader.onerror = (err) => reject(err);
+    reader.onerror = () => reject(new Error('Lỗi khi đọc file ảnh từ thiết bị'));
     reader.readAsDataURL(file);
   });
 }
@@ -124,7 +214,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
   const [tempName, setTempName] = useState(userProfile.displayName);
   const [tempBio, setTempBio] = useState(userProfile.bio);
 
-  // Comment inputs & commenter persona (so user can test commenting as themselves or as friends)
+  // Comment inputs & commenter persona
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [activeCommenterName, setActiveCommenterName] = useState<string>(
     `${userProfile.displayName} (${userProfile.handle})`
@@ -132,11 +222,14 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
   const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
   const [selectedGridPost, setSelectedGridPost] = useState<CommunityPost | null>(null);
   const [uploadNotice, setUploadNotice] = useState<string | null>(null);
+  const [isProcessingPhoto, setIsProcessingPhoto] = useState<boolean>(false);
 
-  // Refs for file inputs (Album upload)
-  const postImageInputRef = useRef<HTMLInputElement | null>(null);
-  const avatarInputRef = useRef<HTMLInputElement | null>(null);
-  const coverInputRef = useRef<HTMLInputElement | null>(null);
+  // Dedicated refs for Phone Camera & Phone Album
+  const postAlbumInputRef = useRef<HTMLInputElement | null>(null);
+  const postCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarAlbumInputRef = useRef<HTMLInputElement | null>(null);
+  const avatarCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const coverAlbumInputRef = useRef<HTMLInputElement | null>(null);
 
   // New Post Form State
   const [dishName, setDishName] = useState('');
@@ -153,51 +246,89 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
     'Phi thơm hành với cà chua\nĐổ trứng đánh tan vào đảo đều\nRắc tiêu và hành lá'
   );
 
-  // Handle picking dish photo from user's device album
-  const handlePickDishPhotoFromAlbum = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle picking dish photo from Camera or Album
+  const handlePickDishPhoto = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    source: 'camera' | 'album'
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsProcessingPhoto(true);
+    setUploadNotice(null);
+
     try {
-      const compressed = await readAndCompressImageFile(file, 1080);
+      const compressed = await readAndCompressImageFile(file, 960, 960);
       setSelectedImg(compressed);
       setIsCustomAlbumPhoto(true);
       setShowCreateForm(true);
+      setUploadNotice(
+        source === 'camera'
+          ? '✓ Đã chụp ảnh món ăn từ Camera điện thoại thành công!'
+          : '✓ Đã tải ảnh món ăn từ Album điện thoại thành công!'
+      );
+      setTimeout(() => setUploadNotice(null), 4000);
     } catch {
-      // ignore
+      setUploadNotice('⚠ Không thể đọc ảnh. Vui lòng chọn ảnh định dạng JPG, PNG hoặc HEIC từ điện thoại.');
+    } finally {
+      setIsProcessingPhoto(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
-  // Handle picking Avatar photo from device album
-  const handlePickAvatarFromAlbum = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle picking Avatar photo from Camera or Album
+  const handlePickAvatar = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    source: 'camera' | 'album' = 'album'
+  ) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsProcessingPhoto(true);
+    setUploadNotice(null);
+
     try {
-      const compressed = await readAndCompressImageFile(file, 400);
+      const compressed = await readAndCompressImageFile(file, 400, 400);
       onUpdateUserProfile({
         ...userProfile,
         avatarUrl: compressed,
       });
+      setUploadNotice(
+        source === 'camera'
+          ? '✓ Đã chụp và cập nhật ảnh đại diện mới!'
+          : '✓ Đã cập nhật ảnh đại diện từ Album điện thoại!'
+      );
+      setTimeout(() => setUploadNotice(null), 4000);
     } catch {
-      // ignore
+      setUploadNotice('⚠ Không thể đổi ảnh đại diện. Vui lòng thử lại với ảnh khác.');
+    } finally {
+      setIsProcessingPhoto(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
-  // Handle picking Cover photo from device album
-  const handlePickCoverFromAlbum = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle picking Cover photo from Album
+  const handlePickCover = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    setIsProcessingPhoto(true);
+    setUploadNotice(null);
+
     try {
-      const compressed = await readAndCompressImageFile(file, 1200);
+      const compressed = await readAndCompressImageFile(file, 1200, 600);
       onUpdateUserProfile({
         ...userProfile,
         coverUrl: compressed,
       });
+      setUploadNotice('✓ Đã cập nhật ảnh bìa từ Album điện thoại!');
+      setTimeout(() => setUploadNotice(null), 4000);
     } catch {
-      // ignore
+      setUploadNotice('⚠ Không thể đổi ảnh bìa. Vui lòng thử lại với ảnh khác.');
+    } finally {
+      setIsProcessingPhoto(false);
+      e.target.value = '';
     }
-    e.target.value = '';
   };
 
   const handleCreateSubmit = (e: React.FormEvent) => {
@@ -257,30 +388,81 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
     ? posts.find((p) => p.id === selectedGridPost.id) || null
     : null;
 
+  // Reliable mobile input styling (avoid display: none blocking on WebKit / Android)
+  const hiddenInputStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: '-9999px',
+    left: '-9999px',
+    opacity: 0,
+    width: '1px',
+    height: '1px',
+    pointerEvents: 'none',
+  };
+
   return (
     <div className="space-y-8">
-      {/* Hidden File Inputs for Album Photo Selection */}
+      {/* Mobile-Safe File Inputs (Synchronous trigger, Camera & Album separated) */}
       <input
-        ref={postImageInputRef}
+        ref={postCameraInputRef}
         type="file"
         accept="image/*"
-        onChange={handlePickDishPhotoFromAlbum}
-        className="hidden"
+        capture="environment"
+        onChange={(e) => handlePickDishPhoto(e, 'camera')}
+        style={hiddenInputStyle}
+        title="Chụp ảnh món ăn từ Camera điện thoại"
       />
       <input
-        ref={avatarInputRef}
+        ref={postAlbumInputRef}
         type="file"
-        accept="image/*"
-        onChange={handlePickAvatarFromAlbum}
-        className="hidden"
+        accept="image/*,image/heic,image/heif,image/jpeg,image/png,image/webp"
+        onChange={(e) => handlePickDishPhoto(e, 'album')}
+        style={hiddenInputStyle}
+        title="Chọn ảnh món ăn từ Thư viện Album điện thoại"
       />
       <input
-        ref={coverInputRef}
+        ref={avatarCameraInputRef}
         type="file"
         accept="image/*"
-        onChange={handlePickCoverFromAlbum}
-        className="hidden"
+        capture="user"
+        onChange={(e) => handlePickAvatar(e, 'camera')}
+        style={hiddenInputStyle}
+        title="Chụp ảnh đại diện từ Camera trước"
       />
+      <input
+        ref={avatarAlbumInputRef}
+        type="file"
+        accept="image/*,image/heic,image/heif,image/jpeg,image/png,image/webp"
+        onChange={(e) => handlePickAvatar(e, 'album')}
+        style={hiddenInputStyle}
+        title="Chọn ảnh đại diện từ Album điện thoại"
+      />
+      <input
+        ref={coverAlbumInputRef}
+        type="file"
+        accept="image/*,image/heic,image/heif,image/jpeg,image/png,image/webp"
+        onChange={handlePickCover}
+        style={hiddenInputStyle}
+        title="Chọn ảnh bìa từ Album điện thoại"
+      />
+
+      {/* Processing Photo Mobile Overlay Spinner */}
+      {isProcessingPhoto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 shadow-2xl border border-[#DCE5D8] flex items-center gap-4 max-w-sm w-full">
+            <div className="w-10 h-10 rounded-2xl bg-[#EEF5EE] flex items-center justify-center shrink-0">
+              <RefreshCw className="w-5 h-5 text-[#2D6A4F] animate-spin" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-[#1B2A22]">
+                Đang xử lý ảnh từ điện thoại...
+              </div>
+              <div className="text-xs text-[#5C7467] mt-0.5">
+                Tự động tối ưu dung lượng và điều chỉnh góc xoay chuẩn.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Navigation Switcher: Bảng tin Cộng đồng vs Trang cá nhân của tôi */}
       <section className="bg-white border border-[#DCE5D8] rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
@@ -319,39 +501,62 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             </button>
           </div>
 
+          {/* Mobile Camera Direct Button (Synchronous trigger) */}
           <button
             type="button"
-            onClick={() => {
-              setShowCreateForm(true);
-              setTimeout(() => postImageInputRef.current?.click(), 100);
-            }}
-            className="px-4 py-2.5 text-xs font-semibold text-[#2D6A4F] bg-[#EEF5EE] hover:bg-[#D8F3DC] border border-[#CFE0D2] rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            onClick={() => postCameraInputRef.current?.click()}
+            className="px-3.5 py-2.5 text-xs font-semibold text-[#2D6A4F] bg-[#EEF5EE] hover:bg-[#D8F3DC] border border-[#CFE0D2] rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs active:scale-95 transition-all"
+            title="Mở Camera chụp ảnh mâm cơm trực tiếp bằng điện thoại"
           >
-            <ImageIcon className="w-4 h-4" />
-            Lấy ảnh từ Album & Đăng
+            <Camera className="w-4 h-4 text-[#2D6A4F]" />
+            <span className="hidden sm:inline">Chụp ảnh Camera</span>
+            <span className="sm:hidden">Chụp ảnh</span>
           </button>
 
+          {/* Mobile Album Direct Button (Synchronous trigger) */}
+          <button
+            type="button"
+            onClick={() => postAlbumInputRef.current?.click()}
+            className="px-3.5 py-2.5 text-xs font-semibold text-[#166534] bg-[#F0FDF4] hover:bg-[#DCFCE7] border border-[#BBF7D0] rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs active:scale-95 transition-all"
+            title="Chọn ảnh món ăn từ thư viện Album ảnh điện thoại"
+          >
+            <ImageIcon className="w-4 h-4 text-[#166534]" />
+            <span className="hidden sm:inline">Tải ảnh từ Album</span>
+            <span className="sm:hidden">Album máy</span>
+          </button>
+
+          {/* Write Recipe Button */}
           <button
             type="button"
             onClick={() => setShowCreateForm(!showCreateForm)}
-            className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs active:scale-95 transition-all"
           >
             <Plus className="w-4 h-4" />
-            Đăng món ăn mới
+            Đăng món mới
           </button>
         </div>
       </section>
 
       {uploadNotice && (
-        <div className="p-4 rounded-xl bg-[#EEF5EE] border border-[#95D5B2] text-sm font-medium text-[#1B4332] flex items-center justify-between">
+        <div
+          className={`p-4 rounded-xl border flex items-center justify-between text-xs sm:text-sm font-medium transition-all ${
+            uploadNotice.startsWith('⚠')
+              ? 'bg-[#FEF2F2] border-[#FECACA] text-[#991B1B]'
+              : 'bg-[#EEF5EE] border-[#95D5B2] text-[#1B4332]'
+          }`}
+        >
           <span className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-[#2D6A4F]" />
+            {uploadNotice.startsWith('⚠') ? (
+              <AlertCircle className="w-4 h-4 shrink-0 text-[#DC2626]" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-[#2D6A4F]" />
+            )}
             {uploadNotice}
           </span>
           <button
             type="button"
             onClick={() => setUploadNotice(null)}
-            className="text-xs underline cursor-pointer"
+            className="text-xs underline ml-3 shrink-0 cursor-pointer"
           >
             Đóng
           </button>
@@ -372,8 +577,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             )}
             <button
               type="button"
-              onClick={() => coverInputRef.current?.click()}
-              className="absolute bottom-3 right-4 px-3 py-1.5 rounded-xl bg-white/90 hover:bg-white text-[#1B2A22] border border-[#DCE5D8] text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              onClick={() => coverAlbumInputRef.current?.click()}
+              className="absolute bottom-3 right-4 px-3 py-1.5 rounded-xl bg-white/95 hover:bg-white text-[#1B2A22] border border-[#DCE5D8] text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 transition-all"
             >
               <Camera className="w-3.5 h-3.5 text-[#2D6A4F]" />
               Đổi ảnh bìa từ Album
@@ -395,14 +600,24 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                   ) : (
                     <span className="font-display text-3xl font-bold text-white">MK</span>
                   )}
+                  {/* Desktop Hover Overlay */}
                   <button
                     type="button"
-                    onClick={() => avatarInputRef.current?.click()}
-                    className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[11px] font-semibold cursor-pointer"
+                    onClick={() => avatarAlbumInputRef.current?.click()}
+                    className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white text-[11px] font-semibold cursor-pointer"
                     title="Đổi ảnh đại diện từ Album"
                   >
                     <Camera className="w-5 h-5 mb-0.5" />
                     Đổi ảnh
+                  </button>
+                  {/* Always-visible Mobile Camera Badge for Touchscreens */}
+                  <button
+                    type="button"
+                    onClick={() => avatarAlbumInputRef.current?.click()}
+                    className="sm:hidden absolute bottom-1 right-1 w-7 h-7 rounded-full bg-[#1B2A22]/90 text-white flex items-center justify-center shadow-md border-2 border-white cursor-pointer active:scale-90 transition-transform"
+                    title="Chạm để đổi ảnh đại diện"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
                   </button>
                 </div>
 
@@ -478,14 +693,23 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                         ) : null}
                       </div>
                       <p className="text-xs text-[#4A6355] mt-1 max-w-xl">{userProfile.bio}</p>
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
                         <button
                           type="button"
-                          onClick={() => avatarInputRef.current?.click()}
-                          className="text-xs font-medium text-[#2D6A4F] hover:underline flex items-center gap-1 cursor-pointer"
+                          onClick={() => avatarCameraInputRef.current?.click()}
+                          className="text-xs font-semibold text-[#2D6A4F] hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <Camera className="w-3.5 h-3.5" />
-                          Chọn ảnh đại diện từ Album
+                          Chụp ảnh đại diện
+                        </button>
+                        <span className="text-xs text-[#DCE5D8]">·</span>
+                        <button
+                          type="button"
+                          onClick={() => avatarAlbumInputRef.current?.click()}
+                          className="text-xs font-medium text-[#2D6A4F] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          Chọn từ Album
                         </button>
                         <span className="text-xs text-[#DCE5D8]">·</span>
                         <button
@@ -560,19 +784,30 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => postImageInputRef.current?.click()}
-                  className="px-3.5 py-2.5 rounded-xl bg-[#EEF5EE] hover:bg-[#D8F3DC] text-[#2D6A4F] text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  onClick={() => postCameraInputRef.current?.click()}
+                  className="px-3.5 py-2.5 rounded-xl bg-[#EEF5EE] hover:bg-[#D8F3DC] text-[#2D6A4F] text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 transition-all"
+                  title="Chụp ảnh món ăn bằng Camera điện thoại"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span className="hidden sm:inline">Chụp Camera</span>
+                  <span className="sm:hidden">Chụp ảnh</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => postAlbumInputRef.current?.click()}
+                  className="px-3.5 py-2.5 rounded-xl bg-[#F0FDF4] hover:bg-[#DCFCE7] text-[#166534] border border-[#BBF7D0] text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 transition-all"
+                  title="Chọn ảnh món ăn từ Thư viện Album điện thoại"
                 >
                   <ImageIcon className="w-4 h-4" />
-                  Ảnh từ Album
+                  <span>Album ảnh</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowCreateForm(true)}
-                  className="px-3.5 py-2.5 rounded-xl bg-[#2D6A4F] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                  className="px-3.5 py-2.5 rounded-xl bg-[#2D6A4F] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95 transition-all"
                 >
                   <Plus className="w-4 h-4" />
-                  Viết công thức
+                  Viết bài
                 </button>
               </div>
             </div>
@@ -657,7 +892,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
           </div>
 
           <form onSubmit={handleCreateSubmit} className="space-y-5">
-            {/* Step 1: Pick Photo from Album or Sample */}
+            {/* Step 1: Pick Photo from Camera, Album or Sample */}
             <div className="p-4 rounded-2xl bg-[#F8FBF7] border border-[#DCE5D8] space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -665,17 +900,29 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                     1. Hình ảnh món ăn của bạn
                   </label>
                   <span className="text-xs text-[#4A6355]">
-                     Tải ảnh chụp thực tế từ Album điện thoại/máy tính hoặc chọn ảnh minh họa bên dưới
+                    Chụp trực tiếp bằng Camera điện thoại, lấy ảnh từ Album máy hoặc chọn ảnh mẫu bên dưới
                   </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => postImageInputRef.current?.click()}
-                  className="px-4 py-2.5 rounded-xl bg-[#2D6A4F] hover:bg-[#1B4332] text-white text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-2xs"
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  Chọn ảnh từ Album thiết bị
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => postCameraInputRef.current?.click()}
+                    className="px-3.5 py-2.5 rounded-xl bg-[#2D6A4F] hover:bg-[#1B4332] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 transition-all"
+                    title="Mở Camera điện thoại chụp ảnh mâm cơm"
+                  >
+                    <Camera className="w-4 h-4" />
+                    <span>Chụp từ Camera</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => postAlbumInputRef.current?.click()}
+                    className="px-3.5 py-2.5 rounded-xl bg-white hover:bg-[#F6F9F5] border border-[#DCE5D8] text-[#1B2A22] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 transition-all"
+                    title="Chọn ảnh từ Album điện thoại"
+                  >
+                    <ImageIcon className="w-4 h-4 text-[#2D6A4F]" />
+                    <span>Album điện thoại</span>
+                  </button>
+                </div>
               </div>
 
               {/* Current Photo Preview + Sample Thumbnails */}
@@ -683,8 +930,15 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                 <div className="md:col-span-5">
                   <div className="relative aspect-4/3 w-full rounded-xl overflow-hidden border border-[#DCE5D8] bg-white">
                     <DishImage src={selectedImg} alt="Ảnh món ăn chuẩn bị đăng" className="w-full h-full" />
-                    <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-lg bg-black/65 text-white text-[11px] font-medium">
-                      {isCustomAlbumPhoto ? '✓ Ảnh lấy từ Album của bạn' : 'Ảnh mẫu minh họa'}
+                    <div className="absolute bottom-2 left-2 px-2.5 py-1 rounded-lg bg-black/65 text-white text-[11px] font-medium flex items-center gap-1">
+                      {isCustomAlbumPhoto ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Ảnh chụp từ điện thoại của bạn</span>
+                        </>
+                      ) : (
+                        <span>Ảnh mẫu minh họa</span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -894,16 +1148,26 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             Chưa có bài đăng nào trong mục này
           </div>
           <p className="text-xs text-[#5C7467] max-w-md mx-auto">
-            Hãy bấm <strong>"Lấy ảnh từ Album & Đăng"</strong> để tải ảnh món ăn của bạn lên Trang cá nhân cho mọi người cùng thả tim và bình luận!
+            Chụp ảnh mâm cơm gia đình bằng <strong>Camera điện thoại</strong> hoặc tải ảnh từ <strong>Album máy</strong> để lưu giữ và chia sẻ cùng cộng đồng!
           </p>
-          <button
-            type="button"
-            onClick={() => postImageInputRef.current?.click()}
-            className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] rounded-xl inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <ImageIcon className="w-4 h-4" />
-            Chọn ảnh từ Album máy ngay
-          </button>
+          <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => postCameraInputRef.current?.click()}
+              className="px-4 py-2.5 text-xs font-semibold text-white bg-[#2D6A4F] hover:bg-[#1B4332] rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-sm active:scale-95 transition-all"
+            >
+              <Camera className="w-4 h-4" />
+              Chụp ảnh Camera ngay
+            </button>
+            <button
+              type="button"
+              onClick={() => postAlbumInputRef.current?.click()}
+              className="px-4 py-2.5 text-xs font-semibold text-[#166534] bg-[#F0FDF4] hover:bg-[#DCFCE7] border border-[#BBF7D0] rounded-xl inline-flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95 transition-all"
+            >
+              <ImageIcon className="w-4 h-4" />
+              Chọn ảnh từ Album máy
+            </button>
+          </div>
         </div>
       ) : subView === 'profile' && profileLayout === 'grid' ? (
         /* Instagram 3-Column Photo Album Grid */
